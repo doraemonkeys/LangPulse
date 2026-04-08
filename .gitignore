@@ -21,7 +21,6 @@ profile.cov
 # vendor/
 
 # Go workspace file
-go.work
 go.work.sum
 
 # env file
@@ -30,3 +29,16 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+.claude
+
+# TypeScript and frontend dependencies/build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Cloudflare local state
+.wrangler/
+.dev.vars
+collector-root
+coverage
