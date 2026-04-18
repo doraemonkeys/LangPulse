@@ -59,12 +59,6 @@ type errorDetailPayload struct {
 	Message string `json:"message"`
 }
 
-type legacyErrorPayload struct {
-	Code    string `json:"code"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
 func NewClient(baseURL string, token string, options ...Option) (*Client, error) {
 	if strings.TrimSpace(baseURL) == "" {
 		return nil, errors.New("ingest base URL is required")
@@ -284,30 +278,13 @@ func decodeAPIError(response *http.Response) error {
 		}
 	}
 
-	var legacyPayload legacyErrorPayload
-	if err := json.Unmarshal(body, &legacyPayload); err != nil {
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = http.StatusText(response.StatusCode)
-		}
-
-		return &APIError{
-			StatusCode: response.StatusCode,
-			Message:    message,
-		}
-	}
-
-	message := strings.TrimSpace(legacyPayload.Error)
-	if message == "" {
-		message = strings.TrimSpace(legacyPayload.Message)
-	}
+	message := strings.TrimSpace(string(body))
 	if message == "" {
 		message = http.StatusText(response.StatusCode)
 	}
 
 	return &APIError{
 		StatusCode: response.StatusCode,
-		Code:       strings.TrimSpace(legacyPayload.Code),
 		Message:    message,
 	}
 }

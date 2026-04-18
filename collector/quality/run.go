@@ -290,7 +290,7 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 }
 
 func ValidateObservedDate(now time.Time, observedDate Day, launchDate Day) error {
-	if observedDate.Before(launchDate.Time) {
+	if observedDate.Before(launchDate) {
 		return fmt.Errorf("%w: observed_date=%s launch_date=%s", ErrBeforeLaunchDate, observedDate, launchDate)
 	}
 
@@ -311,7 +311,7 @@ func ClampRetryDelay(now time.Time, observedDate Day, proposedDelay time.Duratio
 		return 0, false
 	}
 
-	dayClosesAt := observedDate.AddDays(1).Time
+	dayClosesAt := observedDate.AddDays(1).UTC()
 	remaining := dayClosesAt.Sub(now.UTC())
 	if remaining <= 0 {
 		return 0, false
@@ -437,5 +437,5 @@ func pollLeaseError(leaseErrors <-chan error) error {
 }
 
 func sameDay(left Day, right Day) bool {
-	return left.Equal(right.Time)
+	return left.Equal(right)
 }

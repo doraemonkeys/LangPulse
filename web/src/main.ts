@@ -208,13 +208,36 @@ function renderLanguageOptions(select: HTMLSelectElement, languages: PublicLangu
   select.replaceChildren(fragment);
 }
 
+function paragraphWithStrong(prefix: string, emphasized: string, suffix = ""): HTMLParagraphElement {
+  const paragraph = document.createElement("p");
+  paragraph.append(prefix);
+  const strong = document.createElement("strong");
+  strong.textContent = emphasized;
+  paragraph.append(strong);
+  if (suffix !== "") {
+    paragraph.append(suffix);
+  }
+  return paragraph;
+}
+
 function renderMetadataNote(target: HTMLElement, metadata: MetadataResponse, latestObservedDate: string | null): void {
   const defaultRange = computeDefaultRange(metadata.launch_date, latestObservedDate);
-  target.innerHTML = `
-    <p>Available from launch date only: <strong>${metadata.launch_date}</strong>.</p>
-    <p>Snapshots are observed during the UTC day, and missing dates are valid.</p>
-    <p>Default view uses the last ${DEFAULT_RANGE_DAYS} days when available: <strong>${defaultRange.from}</strong> to <strong>${defaultRange.to}</strong>.</p>
-  `;
+
+  const launchLine = paragraphWithStrong("Available from launch date only: ", metadata.launch_date, ".");
+
+  const noteLine = document.createElement("p");
+  noteLine.textContent = "Snapshots are observed during the UTC day, and missing dates are valid.";
+
+  const rangeLine = document.createElement("p");
+  rangeLine.append(`Default view uses the last ${DEFAULT_RANGE_DAYS} days when available: `);
+  const rangeFrom = document.createElement("strong");
+  rangeFrom.textContent = defaultRange.from;
+  rangeLine.append(rangeFrom, " to ");
+  const rangeTo = document.createElement("strong");
+  rangeTo.textContent = defaultRange.to;
+  rangeLine.append(rangeTo, ".");
+
+  target.replaceChildren(launchLine, noteLine, rangeLine);
 }
 
 function renderSnapshotTable(target: HTMLElement, quality: QualityResponse): void {
@@ -225,23 +248,34 @@ function renderSnapshotTable(target: HTMLElement, quality: QualityResponse): voi
   }
 
   const table = document.createElement("table");
-  table.innerHTML = `
-    <caption>Latest published snapshot in range</caption>
-    <thead>
-      <tr>
-        <th scope="col">Threshold</th>
-        <th scope="col">Repositories</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${latestPoint.thresholds
-        .map(
-          (threshold) =>
-            `<tr><th scope="row">&gt;= ${threshold.threshold_value} stars</th><td>${threshold.count}</td></tr>`,
-        )
-        .join("")}
-    </tbody>
-  `;
+
+  const caption = document.createElement("caption");
+  caption.textContent = "Latest published snapshot in range";
+  table.append(caption);
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const label of ["Threshold", "Repositories"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headerRow.append(th);
+  }
+  thead.append(headerRow);
+  table.append(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const threshold of latestPoint.thresholds) {
+    const row = document.createElement("tr");
+    const thresholdCell = document.createElement("th");
+    thresholdCell.scope = "row";
+    thresholdCell.textContent = `>= ${threshold.threshold_value} stars`;
+    const countCell = document.createElement("td");
+    countCell.textContent = String(threshold.count);
+    row.append(thresholdCell, countCell);
+    tbody.append(row);
+  }
+  table.append(tbody);
 
   target.replaceChildren(table);
 }

@@ -251,20 +251,6 @@ func TestDecodeAPIErrorStatusTextFallbacks(t *testing.T) {
 			body:       "",
 			wantMsg:    http.StatusText(http.StatusServiceUnavailable),
 		},
-		{
-			name:       "legacy payload falls back to message field",
-			statusCode: http.StatusBadRequest,
-			body:       `{"code":"bad_input","error":" ","message":"validation failed"}`,
-			wantCode:   "bad_input",
-			wantMsg:    "validation failed",
-		},
-		{
-			name:       "legacy payload falls back to status text when messages are blank",
-			statusCode: http.StatusGone,
-			body:       `{"code":"expired","error":" ","message":" "}`,
-			wantCode:   "expired",
-			wantMsg:    http.StatusText(http.StatusGone),
-		},
 	}
 
 	for _, testCase := range testCases {

@@ -140,15 +140,18 @@ async function readActualRowCount(
 async function syncActualRowCount(
   database: Pick<D1Database, "prepare">,
   runId: string,
+  nowIso: string,
 ): Promise<number> {
   const actualRows = await readActualRowCount(database, runId);
   await database
     .prepare(
       `UPDATE quality_30d_runs
       SET actual_rows = ?2
-      WHERE run_id = ?1`,
+      WHERE run_id = ?1
+        AND status = ?3
+        AND lease_expires_at > ?4`,
     )
-    .bind(runId, actualRows)
+    .bind(runId, actualRows, RUN_STATUSES.running, nowIso)
     .run();
 
   return actualRows;
@@ -614,9 +617,48 @@ export async function finalizeQualityRun(
     return { run: failedRun, published_at: null };
   }
 
-  const actualRows = await syncActualRowCount(database, runId);
+  const actualRows = await syncActualRowCount(database, runId, nowIso);
   const refreshedRun = await readRun(database, runId);
   assertKnownRun(refreshedRun, runId);
+
+  // Mirror the initial terminal-state handling above: between the first lease
+  // check and the row-count sync, a concurrent finalizer may have completed or
+  // failed the run, or an expireRun may have flipped status to "expired". Each
+  // terminal state must be surfaced with its own semantics — collapsing them
+  // into run_expired would misclassify a successful concurrent complete and
+  // break finalize idempotency.
+  if (refreshedRun.status === RUN_STATUSES.complete) {
+    const publication = await readPublicationByRunId(database, runId);
+    if (publication !== null) {
+      return { run: refreshedRun, published_at: publication.published_at };
+    }
+  }
+
+  if (refreshedRun.status === RUN_STATUSES.failed) {
+    return { run: refreshedRun, published_at: null };
+  }
+
+  if (refreshedRun.status === RUN_STATUSES.expired) {
+    throw new HttpError(409, "run_expired", "The run lease has already expired.", {
+      run_id: runId,
+    });
+  }
+
+  // Refresh the clock so the lease guard and the batch below compare against
+  // the actual wall-clock: readActualRowCount may have taken real time, and
+  // the captured nowIso from request entry could be stale enough to let the
+  // batch publish after the logical lease deadline.
+  const postSyncNowIso = context.runtime.now().toISOString();
+
+  if (isLeaseExpired(refreshedRun, postSyncNowIso)) {
+    await expireRun(database, runId, postSyncNowIso, FINALIZATION_EXPIRY_SUMMARY);
+    throw new HttpError(
+      409,
+      "run_expired",
+      "The run lease expired before finalization completed.",
+      { run_id: runId },
+    );
+  }
 
   if (actualRows !== refreshedRun.expected_rows) {
     await database
@@ -633,7 +675,7 @@ export async function finalizeQualityRun(
         runId,
         RUN_STATUSES.failed,
         actualRows,
-        nowIso,
+        postSyncNowIso,
         `Expected ${refreshedRun.expected_rows} rows but found ${actualRows}.`,
         RUN_STATUSES.running,
       )
@@ -671,7 +713,7 @@ export async function finalizeQualityRun(
             WHERE observed_date = quality_30d_runs.observed_date
           )`,
       )
-      .bind(runId, nowIso, RUN_STATUSES.running),
+      .bind(runId, postSyncNowIso, RUN_STATUSES.running),
     database
       .prepare(
         `UPDATE quality_30d_runs
@@ -686,7 +728,7 @@ export async function finalizeQualityRun(
             WHERE run_id = ?1
           )`,
       )
-      .bind(runId, RUN_STATUSES.complete, nowIso),
+      .bind(runId, RUN_STATUSES.complete, postSyncNowIso),
   ]);
 
   const publication = await readPublicationByRunId(database, runId);
@@ -702,7 +744,7 @@ export async function finalizeQualityRun(
     completedRun.observed_date,
   );
   if (publicationAfterAttempt !== null && publicationAfterAttempt.run_id !== runId) {
-    await failRun(database, runId, nowIso, PUBLICATION_EXISTS_SUMMARY);
+    await failRun(database, runId, postSyncNowIso, PUBLICATION_EXISTS_SUMMARY);
     throw new HttpError(
       409,
       "publication_exists",
@@ -711,8 +753,8 @@ export async function finalizeQualityRun(
     );
   }
 
-  if (completedRun.status === RUN_STATUSES.running && isLeaseExpired(completedRun, nowIso)) {
-    await expireRun(database, runId, nowIso, FINALIZATION_EXPIRY_SUMMARY);
+  if (completedRun.status === RUN_STATUSES.running && isLeaseExpired(completedRun, postSyncNowIso)) {
+    await expireRun(database, runId, postSyncNowIso, FINALIZATION_EXPIRY_SUMMARY);
     throw new HttpError(
       409,
       "run_expired",

@@ -181,7 +181,12 @@ function buildSeriesPathSegments(
 function createLegendItem(series: ThresholdSeries): HTMLLIElement {
   const legendItem = document.createElement("li");
   legendItem.className = "quality-chart__legend-item";
-  legendItem.innerHTML = `<span class="quality-chart__swatch" style="--swatch:${series.color}"></span>${series.label}`;
+
+  const swatch = document.createElement("span");
+  swatch.className = "quality-chart__swatch";
+  swatch.style.setProperty("--swatch", series.color);
+
+  legendItem.append(swatch, series.label);
   return legendItem;
 }
 

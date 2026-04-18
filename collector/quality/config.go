@@ -21,8 +21,11 @@ const (
 
 var languageIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// Day is a UTC calendar date at day precision. It intentionally hides the
+// underlying time.Time so callers cannot reach zone-shifting, sub-day, or
+// arbitrary-duration methods that would break the UTC-only invariant.
 type Day struct {
-	time.Time
+	t time.Time
 }
 
 type Config struct {
@@ -53,7 +56,7 @@ func ParseDay(raw string) (Day, error) {
 		return Day{}, fmt.Errorf("parse UTC date %q: %w", raw, err)
 	}
 
-	return Day{Time: timestamp.UTC()}, nil
+	return Day{t: timestamp.UTC()}, nil
 }
 
 func DayFromTime(now time.Time) Day {
@@ -65,16 +68,40 @@ func DayFromTime(now time.Time) Day {
 	return day
 }
 
+func (d Day) IsZero() bool {
+	return d.t.IsZero()
+}
+
+func (d Day) Before(other Day) bool {
+	return d.t.Before(other.t)
+}
+
+func (d Day) After(other Day) bool {
+	return d.t.After(other.t)
+}
+
+func (d Day) Equal(other Day) bool {
+	return d.t.Equal(other.t)
+}
+
+// UTC returns the underlying midnight-UTC time.Time. Use sparingly — callers
+// that need arithmetic against a time.Time (e.g. computing "time until the UTC
+// day rolls over") may need this, but anything that can stay in Day-space
+// should.
+func (d Day) UTC() time.Time {
+	return d.t.UTC()
+}
+
 func (d Day) String() string {
 	if d.IsZero() {
 		return ""
 	}
 
-	return d.Time.UTC().Format(dateLayout)
+	return d.t.UTC().Format(dateLayout)
 }
 
 func (d Day) AddDays(days int) Day {
-	return Day{Time: d.Time.AddDate(0, 0, days).UTC()}
+	return Day{t: d.t.AddDate(0, 0, days).UTC()}
 }
 
 func (d Day) MarshalJSON() ([]byte, error) {
@@ -237,11 +264,11 @@ func (cfg Config) ExpectedRows(observedDate Day) int {
 }
 
 func isActiveOn(observedDate Day, activeFrom Day, activeTo *Day) bool {
-	if observedDate.Before(activeFrom.Time) {
+	if observedDate.Before(activeFrom) {
 		return false
 	}
 
-	if activeTo != nil && observedDate.After(activeTo.Time) {
+	if activeTo != nil && observedDate.After(*activeTo) {
 		return false
 	}
 
@@ -253,11 +280,11 @@ func validateActiveRange(activeFrom Day, activeTo *Day, launchDate Day) error {
 		return errors.New("active_from is required")
 	}
 
-	if activeFrom.Before(launchDate.Time) {
+	if activeFrom.Before(launchDate) {
 		return fmt.Errorf("active_from %s must be on or after launch_date %s", activeFrom, launchDate)
 	}
 
-	if activeTo != nil && activeTo.Before(activeFrom.Time) {
+	if activeTo != nil && activeTo.Before(activeFrom) {
 		return fmt.Errorf("active_to %s must be on or after active_from %s", activeTo, activeFrom)
 	}
 
