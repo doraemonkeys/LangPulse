@@ -1,0 +1,49 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+
+linters:
+  #default: none
+  default: standard
+  enable:
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - funlen
+    - gocognit
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - nestif
+    - noctx
+    - nolintlint
+    - staticcheck
+    - unconvert
+    - unused
+    - prealloc     
+    - dupl
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocognit
+          - nestif
+  settings:
+    funlen:
+      lines: 150
+      statements: 75
+      ignore-comments: true
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 5
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

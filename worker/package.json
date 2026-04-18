@@ -1,0 +1,28 @@
+{
+  "name": "@langpulse/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../.github/scripts/run-worker-build.mjs",
+    "check": "tsc --noEmit",
+    "coverage:check": "vitest run --coverage",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.9.13",
+    "@cloudflare/workers-types": "^4.20260405.1",
+    "@eslint/js": "^9.38.0",
+    "@vitest/coverage-istanbul": "~3.2.0",
+    "eslint": "^9.38.0",
+    "eslint-plugin-sonarjs": "^3.0.5",
+    "globals": "^16.4.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.46.1",
+    "vitest": "~3.2.0",
+    "wrangler": "^4.43.0"
+  }
+}

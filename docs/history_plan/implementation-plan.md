@@ -29,7 +29,7 @@ Global rules:
 - Configuration is append-only: existing language IDs and threshold values are never repurposed or deleted from the registry
 - `language.id` is the stable public identifier and never changes
 - `label` is presentation-only and may change
-- `github_search_term` is collector-only query syntax and is immutable for a given `language.id`; any semantic change requires a new `language.id`
+- `github_query_fragment` is a collector-only GitHub query fragment and is immutable for a given `language.id`; any semantic change requires a new `language.id`
 - `active_from` and `active_to` control collection eligibility only; they never hide previously published history
 - Retired languages and thresholds remain publicly queryable for historical dates
 
@@ -44,7 +44,7 @@ Example config shape:
     {
       "id": "go",
       "label": "Go",
-      "github_search_term": "go",
+      "github_query_fragment": "language:\"go\"",
       "active_from": "2026-04-01",
       "active_to": null
     }
@@ -131,7 +131,7 @@ Rationale:
 - Run attempts, row payloads, and publications are different concepts
 - `attempt_no` makes retries ordered and auditable
 - `lease_expires_at` and `last_heartbeat_at` prevent a crashed collector from blocking the day forever
-- `language.id` is the stable public identifier, `label` is presentation-only, and `github_search_term` stays collector-only
+- `language.id` is the stable public identifier, `label` is presentation-only, and `github_query_fragment` stays collector-only
 - `active_to` stops future collection without rewriting history
 
 ---
@@ -153,7 +153,7 @@ Collect `quality_30d_snapshot` once per UTC day from `launch_date` forward.
 **Query shape**
 
 ```text
-language:{github_search_term} is:public fork:true pushed:>={from} stars:>={threshold}
+{github_query_fragment} is:public fork:true pushed:>={from} stars:>={threshold}
 ```
 
 - `from = observed_date - 29 days`
@@ -287,7 +287,7 @@ Rationale:
 1. Apply migrations
 2. Deploy Worker
 3. Reset the smoke date and verify stale-attempt expiry, successful publication, and post-publication rejection in the smoke Worker environment
-4. Build and deploy Pages
+4. Build the frontend bundle into Worker static assets and deploy the Worker
 
 **validate.yml**
 
@@ -305,10 +305,10 @@ Rationale:
 
 ## Verification
 
-1. Go unit tests cover query building, active range resolution, current-day retry guards, and config invariants for `language.id`, `label`, and `github_search_term`
+1. Go unit tests cover query building, active range resolution, current-day retry guards, and config invariants for `language.id`, `label`, and `github_query_fragment`
 2. Worker tests cover ingest authentication, stale-run expiry, attempt numbering, heartbeat lease renewal, idempotent row writes, finalization idempotency, publication immutability, historical visibility after retirement, sparse responses, and published-only reads
 3. Frontend tests cover label display, retired-language discoverability, `observed_at` display, and empty/error states
-4. `go test ./...` and frontend test commands must satisfy the repository coverage bar before merge
+4. `make ci` and the frontend test commands must satisfy the repository coverage bar before merge
 5. Smoke tests must verify `/api/quality/latest`, one published `/api/quality` query, stale-attempt expiry followed by a successful retry, and rejection of a new attempt after publication
 
 ---

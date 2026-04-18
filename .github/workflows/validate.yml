@@ -1,0 +1,68 @@
+name: Validate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LANGPULSE_GO_MIN_COVERAGE: "90"
+
+jobs:
+  validate:
+    name: Validate Core Repository Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: collector/go.mod
+          cache-dependency-path: collector/go.sum
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            worker/package-lock.json
+            web/package-lock.json
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Validate Repository Contract
+        shell: bash
+        run: |
+          export PATH="$(go env GOPATH)/bin:${PATH}"
+          make ci-core GO_MIN_COVERAGE="${LANGPULSE_GO_MIN_COVERAGE}"
+
+  sloc-guard:
+    name: SLOC Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sloc-guard
+        uses: doraemonkeys/sloc-guard/.github/action@master
+        with:
+          sarif-output: results.sarif
+
+      - name: Upload SARIF
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,263 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/scripts/**
+      - .github/workflows/deploy.yml
+      - config/**
+      - migrations/**
+      - web/**
+      - worker/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  LANGPULSE_D1_DATABASE: ${{ vars.LANGPULSE_D1_DATABASE }}
+  LANGPULSE_D1_DATABASE_ID: ${{ vars.LANGPULSE_D1_DATABASE_ID }}
+  LANGPULSE_SMOKE_D1_DATABASE: ${{ vars.LANGPULSE_SMOKE_D1_DATABASE }}
+  LANGPULSE_SMOKE_D1_DATABASE_ID: ${{ vars.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+  LANGPULSE_WRANGLER_TEMPLATE: worker/wrangler.toml
+  LANGPULSE_WRANGLER_ENV: production
+  LANGPULSE_SMOKE_WRANGLER_ENV: smoke
+
+jobs:
+  apply-migrations:
+    name: Apply Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate Migration Configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${LANGPULSE_D1_DATABASE}" || { echo "LANGPULSE_D1_DATABASE repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_D1_DATABASE_ID}" || { echo "LANGPULSE_D1_DATABASE_ID repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_D1_DATABASE}" || { echo "LANGPULSE_SMOKE_D1_DATABASE repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_D1_DATABASE_ID}" || { echo "LANGPULSE_SMOKE_D1_DATABASE_ID repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_INGEST_AUTH_TOKEN}" || { echo "LANGPULSE_INGEST_AUTH_TOKEN secret is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN}" || { echo "LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN secret is required"; exit 1; }
+          test -n "${CLOUDFLARE_API_TOKEN}" || { echo "CLOUDFLARE_API_TOKEN secret is required"; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "CLOUDFLARE_ACCOUNT_ID secret is required"; exit 1; }
+        env:
+          LANGPULSE_INGEST_AUTH_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+          LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Render Production Wrangler Config
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Render Smoke Wrangler Config
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Apply Production Migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            d1 migrations apply ${{ env.LANGPULSE_D1_DATABASE }}
+            --remote
+            --config ${{ runner.temp }}/langpulse.production.wrangler.toml
+            --env ${{ env.LANGPULSE_WRANGLER_ENV }}
+
+      - name: Apply Smoke Migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            d1 migrations apply ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+            --remote
+            --config ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+            --env ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+
+  deploy-worker:
+    name: Deploy Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    needs:
+      - apply-migrations
+    outputs:
+      production-deployment-url: ${{ steps.deploy-production.outputs.deployment-url }}
+      smoke-deployment-url: ${{ steps.deploy-smoke.outputs.deployment-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Web Dependencies
+        run: node .github/scripts/run-workspace-command.mjs web install
+
+      - name: Install Worker Dependencies
+        run: node .github/scripts/run-workspace-command.mjs worker install
+
+      - name: Build Web
+        run: node .github/scripts/run-workspace-command.mjs web script build
+
+      - name: Render Production Wrangler Config
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Render Smoke Wrangler Config
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Dry Run Production Worker
+        env:
+          LANGPULSE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
+        run: node .github/scripts/run-workspace-command.mjs worker script build
+
+      - name: Dry Run Smoke Worker
+        env:
+          LANGPULSE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+        run: node .github/scripts/run-workspace-command.mjs worker script build
+
+      - name: Deploy Production Worker
+        id: deploy-production
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            deploy
+            --config ${{ runner.temp }}/langpulse.production.wrangler.toml
+            --env ${{ env.LANGPULSE_WRANGLER_ENV }}
+
+      - name: Deploy Smoke Worker
+        id: deploy-smoke
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            deploy
+            --config ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+            --env ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+
+  smoke-api:
+    name: Smoke Test API
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - deploy-worker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Validate Smoke Configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SMOKE_DEPLOYMENT_URL}" || { echo "Smoke deployment URL is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN}" || { echo "LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN secret is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_D1_DATABASE}" || { echo "LANGPULSE_SMOKE_D1_DATABASE repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_SMOKE_D1_DATABASE_ID}" || { echo "LANGPULSE_SMOKE_D1_DATABASE_ID repo variable is required"; exit 1; }
+        env:
+          SMOKE_DEPLOYMENT_URL: ${{ needs.deploy-worker.outputs.smoke-deployment-url }}
+          LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+          LANGPULSE_SMOKE_D1_DATABASE: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+          LANGPULSE_SMOKE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+
+      - name: Render Smoke Wrangler Config
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Smoke Test Ingest Lifecycle
+        env:
+          LANGPULSE_SMOKE_MODE: lifecycle
+          LANGPULSE_SMOKE_BASE_URL: ${{ needs.deploy-worker.outputs.smoke-deployment-url }}
+          LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+          LANGPULSE_SMOKE_D1_DATABASE: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
+          LANGPULSE_SMOKE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_SMOKE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
+          LANGPULSE_SMOKE_RESET_BEFORE_LIFECYCLE: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node .github/scripts/smoke-quality-api.mjs
+
+      - name: Smoke Test Published API
+        env:
+          LANGPULSE_SMOKE_MODE: public
+          LANGPULSE_SMOKE_BASE_URL: ${{ needs.deploy-worker.outputs.smoke-deployment-url }}
+        run: node .github/scripts/smoke-quality-api.mjs
+
+      - name: Smoke Test Frontend Shell
+        shell: bash
+        env:
+          LANGPULSE_SMOKE_BASE_URL: ${{ needs.deploy-worker.outputs.smoke-deployment-url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "${LANGPULSE_SMOKE_BASE_URL%/}/" | grep -q "<title>LangPulse</title>"

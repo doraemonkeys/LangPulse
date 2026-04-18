@@ -1,0 +1,318 @@
+:root {
+  color-scheme: light;
+  --bg: #f4efe6;
+  --panel: rgba(255, 251, 245, 0.88);
+  --panel-strong: rgba(255, 248, 239, 0.96);
+  --ink: #16202a;
+  --muted: #4a5b68;
+  --line: rgba(22, 32, 42, 0.12);
+  --accent: #ff6b35;
+  --accent-deep: #9b2226;
+  --shadow: 0 24px 80px rgba(22, 32, 42, 0.12);
+  font-family: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(255, 107, 53, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(0, 95, 115, 0.14), transparent 28%),
+    linear-gradient(180deg, #fffaf2 0%, var(--bg) 100%);
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#app {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 3rem;
+}
+
+.app-shell {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.hero,
+.controls-card,
+.content-card {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 28px;
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 2rem;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -80px -80px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.2), rgba(0, 95, 115, 0.12));
+}
+
+.hero__eyebrow {
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent-deep);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 5vw, 4.6rem);
+  line-height: 0.96;
+  max-width: 14ch;
+}
+
+.hero__lede {
+  max-width: 56ch;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 1.04rem;
+}
+
+.controls-card,
+.content-card {
+  padding: 1.4rem;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.control {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.control span,
+.metadata-note,
+.section-heading p,
+.message,
+.snapshot-table caption {
+  color: var(--muted);
+}
+
+.control span {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+select,
+input,
+button {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  font: inherit;
+}
+
+select,
+input {
+  min-height: 52px;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+}
+
+button {
+  min-height: 52px;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+  color: #fffaf2;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.metadata-note {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  font-size: 0.92rem;
+}
+
+.metadata-note p {
+  margin: 0;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.section-heading p {
+  margin: 0.35rem 0 0;
+  max-width: 60ch;
+}
+
+.message {
+  min-height: 1.5rem;
+  text-align: right;
+}
+
+.chart-host {
+  margin-top: 1.25rem;
+  min-height: 420px;
+  border-radius: 24px;
+  padding: 1rem;
+  background: var(--panel-strong);
+  border: 1px solid rgba(22, 32, 42, 0.08);
+}
+
+.quality-chart {
+  margin: 0;
+}
+
+.quality-chart__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.quality-chart__grid line,
+.quality-chart__axis line {
+  stroke: rgba(22, 32, 42, 0.08);
+  stroke-width: 1;
+}
+
+.quality-chart__axis-text {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.quality-chart__line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.quality-chart__legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.2rem;
+  padding: 1rem 0 0;
+  margin: 0;
+}
+
+.quality-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.quality-chart__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--swatch);
+}
+
+.snapshot-table {
+  margin-top: 1.25rem;
+}
+
+.snapshot-table table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--panel-strong);
+  border: 1px solid rgba(22, 32, 42, 0.08);
+}
+
+.snapshot-table caption {
+  text-align: left;
+  padding-bottom: 0.7rem;
+  font-weight: 600;
+}
+
+.snapshot-table th,
+.snapshot-table td {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(22, 32, 42, 0.08);
+  text-align: left;
+}
+
+.snapshot-table tr:last-child th,
+.snapshot-table tr:last-child td {
+  border-bottom: none;
+}
+
+.app-shell--loading .chart-host::before,
+.app-shell--error .chart-host::before,
+.app-shell--empty .chart-host::before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 388px;
+  border: 1px dashed rgba(22, 32, 42, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.app-shell--loading .chart-host::before {
+  content: "Loading published snapshots…";
+}
+
+.app-shell--error .chart-host::before {
+  content: "The selected view could not be loaded.";
+}
+
+.app-shell--empty .chart-host::before {
+  content: "No published snapshots for this selection.";
+}
+
+@media (max-width: 840px) {
+  #app {
+    width: min(100% - 1rem, 1120px);
+    padding-top: 1rem;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading {
+    flex-direction: column;
+  }
+
+  .message {
+    text-align: left;
+  }
+
+  .chart-host {
+    min-height: 320px;
+    padding: 0.75rem;
+  }
+}

@@ -1,0 +1,256 @@
+{
+  "timezone": "UTC",
+  "window_days": 30,
+  "launch_date": "2026-04-01",
+  "languages": [
+    {
+      "id": "go",
+      "label": "Go",
+      "github_query_fragment": "language:\"go\"",
+      "active_from": "2026-04-01",
+      "active_to": null
+    },
+    {
+      "id": "rust",
+      "label": "Rust",
+      "github_query_fragment": "language:\"rust\"",
+      "active_from": "2026-04-01",
+      "active_to": null
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "github_query_fragment": "language:\"python\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "javascript",
+      "label": "JavaScript",
+      "github_query_fragment": "language:\"javascript\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "github_query_fragment": "language:\"typescript\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "github_query_fragment": "language:\"java\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "csharp",
+      "label": "C#",
+      "github_query_fragment": "language:\"c#\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "cpp",
+      "label": "C++",
+      "github_query_fragment": "language:\"c++\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "php",
+      "label": "PHP",
+      "github_query_fragment": "language:\"php\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "kotlin",
+      "label": "Kotlin",
+      "github_query_fragment": "language:\"kotlin\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "swift",
+      "label": "Swift",
+      "github_query_fragment": "language:\"swift\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "solidity",
+      "label": "Solidity",
+      "github_query_fragment": "language:\"solidity\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "move",
+      "label": "Move",
+      "github_query_fragment": "language:\"move\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "shell",
+      "label": "Shell",
+      "github_query_fragment": "language:\"Shell\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "powershell",
+      "label": "PowerShell",
+      "github_query_fragment": "language:\"PowerShell\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "dart",
+      "label": "Dart",
+      "github_query_fragment": "language:\"Dart\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "vue",
+      "label": "Vue",
+      "github_query_fragment": "language:\"Vue\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "visual-basic-dotnet",
+      "label": "Visual Basic .NET",
+      "github_query_fragment": "language:\"Visual Basic .NET\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "r",
+      "label": "R",
+      "github_query_fragment": "language:\"R\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "pascal",
+      "label": "Pascal",
+      "github_query_fragment": "language:\"Pascal\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "matlab",
+      "label": "MATLAB",
+      "github_query_fragment": "language:\"MATLAB\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "fortran",
+      "label": "Fortran",
+      "github_query_fragment": "language:\"Fortran\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "ada",
+      "label": "Ada",
+      "github_query_fragment": "language:\"Ada\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "cobol",
+      "label": "COBOL",
+      "github_query_fragment": "language:\"COBOL\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "common-lisp",
+      "label": "Common Lisp",
+      "github_query_fragment": "language:\"Common Lisp\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "zig",
+      "label": "Zig",
+      "github_query_fragment": "language:\"Zig\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "vbscript",
+      "label": "VBScript",
+      "github_query_fragment": "language:\"VBScript\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "lua",
+      "label": "Lua",
+      "github_query_fragment": "language:\"Lua\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "erlang",
+      "label": "Erlang",
+      "github_query_fragment": "language:\"Erlang\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "scala",
+      "label": "Scala",
+      "github_query_fragment": "language:\"Scala\"",
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "id": "ruby",
+      "label": "Ruby",
+      "github_query_fragment": "language:\"ruby\"",
+      "active_from": "2026-04-01",
+      "active_to": "2026-04-03"
+    }
+  ],
+  "thresholds": [
+    {
+      "value": 0,
+      "active_from": "2026-04-01",
+      "active_to": null
+    },
+    {
+      "value": 2,
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "value": 10,
+      "active_from": "2026-04-01",
+      "active_to": null
+    },
+    {
+      "value": 50,
+      "active_from": "2026-04-01",
+      "active_to": "2026-04-03"
+    },
+    {
+      "value": 100,
+      "active_from": "2026-04-08",
+      "active_to": null
+    },
+    {
+      "value": 1000,
+      "active_from": "2026-04-08",
+      "active_to": null
+    }
+  ]
+}

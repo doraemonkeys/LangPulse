@@ -4,6 +4,14 @@
 
 - [PROJECT_OVERVIEW](docs/PROJECT_OVERVIEW.md)
 
+## Test / Validation Commands
+
+Repo root:
+
+```bash
+make ci
+```
+
 ## Rules
 
 - **Explain "Why", not "What"**: Use comments to explain design rationale, business logic constraints, or non-obvious trade-offs. Code structure and naming should inherently describe the "what."
@@ -19,3 +27,7 @@
 - **Accept Interfaces, Return Structs**: Define interfaces where they are used (consumer side), not where they are implemented.
 - **Hard Requirement**: Project CI enforces a **90% minimum test coverage**.
 - Never store context inside a struct.
+
+## Other
+
+Design decisions should be documented in docs/clarifications.

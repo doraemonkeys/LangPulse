@@ -1,0 +1,107 @@
+name: Collect Quality Snapshot
+
+on:
+  schedule:
+    - cron: "15 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collect-quality-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  COLLECTOR_WORKDIR: collector
+  COLLECTOR_BINARY: bin/collect-quality
+  COLLECTOR_RETRY_BUDGET: "3"
+  COLLECTOR_RETRY_DELAY_SECONDS: "300"
+  LANGPULSE_LATEST_PATH: /api/quality/latest
+  LANGPULSE_API_BASE_URL: ${{ vars.LANGPULSE_API_BASE_URL }}
+  LANGPULSE_D1_DATABASE: ${{ vars.LANGPULSE_D1_DATABASE }}
+  LANGPULSE_D1_DATABASE_ID: ${{ vars.LANGPULSE_D1_DATABASE_ID }}
+  LANGPULSE_WRANGLER_TEMPLATE: worker/wrangler.toml
+  LANGPULSE_WRANGLER_ENV: production
+
+jobs:
+  collect:
+    name: Build and Collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: collector/go.mod
+          cache-dependency-path: collector/go.sum
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler
+        if: ${{ vars.LANGPULSE_D1_DATABASE != '' }}
+        run: npm install --global wrangler@4
+
+      - name: Validate Runtime Configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${LANGPULSE_API_BASE_URL}" || { echo "LANGPULSE_API_BASE_URL repo variable is required"; exit 1; }
+          test -n "${GITHUB_TOKEN}" || { echo "LANGPULSE_GITHUB_API_TOKEN secret is required"; exit 1; }
+          test -n "${LANGPULSE_INGEST_BASE_URL}" || { echo "LANGPULSE_INGEST_BASE_URL repo variable is required"; exit 1; }
+          test -n "${LANGPULSE_INGEST_TOKEN}" || { echo "LANGPULSE_INGEST_AUTH_TOKEN secret is required"; exit 1; }
+        env:
+          GITHUB_TOKEN: ${{ secrets.LANGPULSE_GITHUB_API_TOKEN }}
+          LANGPULSE_INGEST_BASE_URL: ${{ vars.LANGPULSE_INGEST_BASE_URL }}
+          LANGPULSE_INGEST_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+
+      - name: Build Collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          cd "${COLLECTOR_WORKDIR}"
+          go build -trimpath -o "../${COLLECTOR_BINARY}" ./cmd/collect-quality
+
+      - name: Run Collector Until Publication
+        env:
+          COLLECTOR_COMMAND: ./${{ env.COLLECTOR_BINARY }}
+          GITHUB_TOKEN: ${{ secrets.LANGPULSE_GITHUB_API_TOKEN }}
+          LANGPULSE_INGEST_BASE_URL: ${{ vars.LANGPULSE_INGEST_BASE_URL }}
+          LANGPULSE_INGEST_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+        run: node .github/scripts/run-collect-quality.mjs
+
+      - name: Render Diagnostics Wrangler Config
+        if: ${{ always() && vars.LANGPULSE_D1_DATABASE != '' }}
+        continue-on-error: true
+        env:
+          LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
+          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
+          LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
+          LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
+          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+        run: node .github/scripts/render-wrangler-config.mjs
+
+      - name: Query Attempt Diagnostics
+        if: ${{ always() && vars.LANGPULSE_D1_DATABASE != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          observed_date="$(date -u +%F)"
+          wrangler d1 execute "${LANGPULSE_D1_DATABASE}" \
+            --remote \
+            --config "${RUNNER_TEMP}/langpulse.production.wrangler.toml" \
+            --env "${LANGPULSE_WRANGLER_ENV}" \
+            --command "SELECT observed_date, attempt_no, status, actual_rows, expected_rows, started_at, finished_at, error_summary FROM quality_30d_runs WHERE observed_date = '${observed_date}' ORDER BY attempt_no;"

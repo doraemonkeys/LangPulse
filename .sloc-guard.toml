@@ -1,0 +1,98 @@
+version = "2"
+
+[scanner]
+gitignore = true
+exclude = [
+  "**/.git/**",
+  "**/.wrangler/**",
+  "**/coverage/**",
+  "**/dist/**",
+  "**/node_modules/**",
+  "collector/coverage",
+  "collector/coverage.out",
+  "collector/coverage-func.txt",
+]
+
+[content]
+extensions = ["go", "ts", "js", "mjs", "css"]
+max_lines = 360
+warn_threshold = 0.85
+skip_comments = true
+skip_blank = true
+
+[[content.rules]]
+pattern = "collector/**/*.go"
+max_lines = 340
+warn_at = 300
+
+[[content.rules]]
+pattern = "collector/**/*_test.go"
+max_lines = 600
+warn_at = 520
+
+[[content.rules]]
+pattern = "worker/src/**/*.ts"
+max_lines = 260
+warn_at = 220
+
+# quality-runs currently owns the run state machine end-to-end, so it needs a
+# tighter exception until the orchestration is extracted into smaller modules.
+[[content.rules]]
+pattern = "worker/src/quality-runs.ts"
+max_lines = 800
+warn_at = 720
+
+[[content.rules]]
+pattern = "worker/test/**/*.ts"
+max_lines = 760
+warn_at = 680
+
+[[content.rules]]
+pattern = "web/src/**/*.ts"
+max_lines = 240
+warn_at = 200
+
+# main.ts composes the dashboard shell, API orchestration, and DOM rendering in
+# one entrypoint today, so its ceiling is intentionally isolated from helpers.
+[[content.rules]]
+pattern = "web/src/main.ts"
+max_lines = 380
+warn_at = 340
+
+[[content.rules]]
+pattern = "web/src/charts/quality-chart.ts"
+max_lines = 260
+warn_at = 230
+
+[[content.rules]]
+pattern = "web/src/**/*.test.ts"
+max_lines = 320
+warn_at = 280
+
+[[content.rules]]
+pattern = "web/src/**/*.css"
+max_lines = 340
+warn_at = 300
+
+[[content.rules]]
+pattern = ".github/scripts/**/*.mjs"
+max_lines = 200
+warn_at = 170
+
+[[content.rules]]
+pattern = ".github/scripts/smoke-quality-api.mjs"
+max_lines = 560
+warn_at = 500
+
+[structure]
+max_files = 95
+max_dirs = 26
+count_exclude = [
+  "*_test.go",
+  "*.test.*",
+  "*.spec.*",
+  "collector/coverage",
+  "collector/coverage.out",
+  "collector/coverage-func.txt",
+  "tmpclaude-*",
+]

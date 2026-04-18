@@ -1,0 +1,27 @@
+{
+  "name": "@langpulse/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "coverage:check": "vitest run --coverage",
+    "test": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@vitest/coverage-v8": "~3.2.0",
+    "eslint": "^9.38.0",
+    "eslint-plugin-sonarjs": "^3.0.5",
+    "globals": "^16.4.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.46.1",
+    "vite": "^6.4.1",
+    "vitest": "~3.2.0"
+  }
+}
