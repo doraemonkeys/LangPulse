@@ -3,7 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2025-10-08"
 
 # Local test defaults keep the Worker runnable in Vitest; CI renders
-# environment-specific bindings with real Cloudflare database IDs and tokens.
+# environment-specific bindings with real Cloudflare database IDs and pushes
+# INTERNAL_API_TOKEN as a Worker secret (see .github/workflows/deploy.yml).
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
@@ -11,6 +12,7 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/internal/*"]
 
 [vars]
+# Development-only sentinel — production/smoke shadow this with a real secret.
 INTERNAL_API_TOKEN = "test-internal-token"
 RUN_LEASE_DURATION_SECONDS = "300"
 

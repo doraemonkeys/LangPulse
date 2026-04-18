@@ -19,7 +19,6 @@ export function resolveRenderOptions(source) {
     environmentName: requiredEnv("LANGPULSE_WRANGLER_ENV", source),
     databaseName: requiredEnv("LANGPULSE_D1_DATABASE_NAME", source),
     databaseId: requiredEnv("LANGPULSE_D1_DATABASE_ID", source),
-    internalApiToken: requiredEnv("LANGPULSE_INTERNAL_API_TOKEN", source),
     runLeaseDurationSeconds:
       source.LANGPULSE_RUN_LEASE_DURATION_SECONDS?.trim() ||
       DEFAULT_RUN_LEASE_DURATION_SECONDS,
@@ -32,13 +31,15 @@ export function renderWranglerConfig(options) {
   validateEnvironmentName(options.environmentName);
 
   const template = readFileSync(options.templatePath, "utf8").trimEnd();
+  // INTERNAL_API_TOKEN is pushed as a Worker secret by the deploy workflow
+  // (cloudflare/wrangler-action@v3 `secrets:` input) so it never appears as a
+  // plaintext `[vars]` entry in the deployed configuration.
   return [
     template,
     "",
-    `# CI appends deploy-time bindings here so each environment resolves the`,
-    `# worker, internal auth token, and D1 database from the same configuration.`,
+    `# CI appends deploy-time bindings so each environment resolves the worker`,
+    `# lease duration and D1 database from the same configuration.`,
     `[env.${options.environmentName}.vars]`,
-    `INTERNAL_API_TOKEN = ${quoteTomlString(options.internalApiToken)}`,
     `RUN_LEASE_DURATION_SECONDS = ${quoteTomlString(options.runLeaseDurationSeconds)}`,
     "",
     `[[env.${options.environmentName}.d1_databases]]`,

@@ -49,6 +49,40 @@ describe("createQualityApi", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       "https://langpulse.example/api/quality?language=go&from=2026-04-01&to=2026-04-07",
+      { signal: undefined },
+    );
+  });
+
+  it("forwards AbortSignal to the underlying fetch so stale getQuality calls can be cancelled", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          language: { id: "go", label: "Go" },
+          from: "2026-04-01",
+          to: "2026-04-07",
+          series: [],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createQualityApi();
+    const controller = new AbortController();
+
+    await api.getQuality({
+      language: "go",
+      from: "2026-04-01",
+      to: "2026-04-07",
+      signal: controller.signal,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/quality?language=go&from=2026-04-01&to=2026-04-07",
+      { signal: controller.signal },
     );
   });
 

@@ -9,7 +9,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: collect-quality-${{ github.ref_name }}
+  # Shared with deploy.yml so D1 migrations and Worker deploys cannot race an
+  # in-flight collector (the collector depends on a stable schema + lease contract).
+  group: langpulse-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -87,7 +89,6 @@ jobs:
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
-          LANGPULSE_INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
         run: node .github/scripts/render-wrangler-config.mjs
 
       - name: Query Attempt Diagnostics

@@ -46,10 +46,17 @@ export interface QualityResponse {
   series: QualitySeriesPoint[];
 }
 
+export interface QualityQueryInput {
+  language: string;
+  from: string;
+  to: string;
+  signal?: AbortSignal;
+}
+
 export interface QualityApi {
   getMetadata(): Promise<MetadataResponse>;
   getLatest(): Promise<LatestSnapshotResponse>;
-  getQuality(input: { language: string; from: string; to: string }): Promise<QualityResponse>;
+  getQuality(input: QualityQueryInput): Promise<QualityResponse>;
 }
 
 interface ApiErrorPayload {
@@ -124,7 +131,9 @@ export function createQualityApi(baseUrl = ""): QualityApi {
         to: input.to,
       });
 
-      return fetchJson<QualityResponse>(fetch(`${normalizedBaseUrl}/api/quality?${params.toString()}`));
+      return fetchJson<QualityResponse>(
+        fetch(`${normalizedBaseUrl}/api/quality?${params.toString()}`, { signal: input.signal }),
+      );
     },
   };
 }

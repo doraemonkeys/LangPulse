@@ -290,6 +290,30 @@ describe("supporting logic coverage", () => {
       } as WorkerEnv),
     ).toThrow(/INTERNAL_API_TOKEN must be configured/i);
 
+    // Same-length, single-byte mismatch exercises the XOR path end-to-end:
+    // short-circuit compares would leak the mismatch index via response timing.
+    expect(() =>
+      requireServiceAuth(
+        new Request(`${TEST_BASE_URL}/internal/quality-runs`, {
+          headers: { authorization: "Bearer test-internal-tokeN" },
+        }),
+        testEnv,
+      ),
+    ).toThrow(/Service authentication is required/i);
+
+    expect(() =>
+      requireServiceAuth(
+        new Request(`${TEST_BASE_URL}/internal/quality-runs`, {
+          headers: { authorization: "Bearer wrong-length-token" },
+        }),
+        testEnv,
+      ),
+    ).toThrow(/Service authentication is required/i);
+
+    expect(() =>
+      requireServiceAuth(new Request(`${TEST_BASE_URL}/internal/quality-runs`), testEnv),
+    ).toThrow(/Service authentication is required/i);
+
     await expect(
       readJsonObject(
         new Request(`${TEST_BASE_URL}/internal/quality-runs`, {

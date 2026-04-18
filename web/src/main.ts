@@ -299,6 +299,9 @@ function validateRange(from: string, to: string): string | null {
 
 export function createDashboard(root: HTMLElement, api: QualityApi = createQualityApi()): { init(): Promise<void> } {
   const elements = bindElements(root);
+  // Rapid form submits must not race: each load aborts any still-pending
+  // request so the last filter change always wins, regardless of network order.
+  let currentRequest: AbortController | null = null;
 
   async function loadSeries(): Promise<void> {
     const validationError = validateRange(elements.fromInput.value, elements.toInput.value);
@@ -309,14 +312,25 @@ export function createDashboard(root: HTMLElement, api: QualityApi = createQuali
 
     renderLoading(elements, "Loading published snapshots…");
 
+    currentRequest?.abort();
+    const request = new AbortController();
+    currentRequest = request;
+
     try {
       const quality = await api.getQuality({
         language: elements.languageSelect.value,
         from: elements.fromInput.value,
         to: elements.toInput.value,
+        signal: request.signal,
       });
+      if (request.signal.aborted) {
+        return;
+      }
       renderSuccess(elements, quality);
     } catch (error) {
+      if (request.signal.aborted) {
+        return;
+      }
       renderError(elements, getErrorMessage(error));
     }
   }

@@ -1,4 +1,4 @@
-.PHONY: ci ci-core verify verify-core setup clean check-go-env check-sloc-guard collector-test collector-lint collector-coverage collector-coverage-check worker-install web-install worker-check worker-coverage worker-build worker-lint web-check web-coverage web-build web-lint sloc
+.PHONY: ci ci-core verify verify-core setup clean check-go-env check-sloc-guard collector-test collector-lint collector-coverage collector-coverage-check worker-install web-install worker-check worker-coverage worker-build worker-lint web-check web-coverage web-build web-lint scripts-test sloc
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -11,7 +11,7 @@ COLLECTOR_GOLANGCI_CONFIG := .golangci.yml
 COLLECTOR_DIR := collector
 WORKER_DIR := worker
 WEB_DIR := web
-CORE_VALIDATION_TARGETS := collector-lint collector-coverage-check web-check web-coverage worker-check worker-coverage worker-build worker-lint web-lint
+CORE_VALIDATION_TARGETS := collector-lint collector-coverage-check web-check web-coverage worker-check worker-coverage worker-build worker-lint web-lint scripts-test
 
 # Keep package-manager detection in one place so local and CI validation use
 # the same workspace resolution rules instead of drifting over time.
@@ -92,6 +92,11 @@ web-build:
 
 web-lint:
 	$(WORKSPACE_RUNNER) $(WEB_DIR) script lint
+
+# Unit-tests the CI helper scripts so regressions in rendering/secret handling
+# are caught by `make ci-core` instead of slipping through to a live deploy.
+scripts-test:
+	node --test .github/scripts/*.test.mjs
 
 sloc: check-sloc-guard
 	$(SLOC_GUARD) check

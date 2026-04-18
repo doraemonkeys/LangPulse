@@ -12,9 +12,27 @@ export function requireServiceAuth(request: Request, env: WorkerEnv): void {
     );
   }
 
-  const providedAuthorization = request.headers.get("authorization");
+  const providedAuthorization = request.headers.get("authorization") ?? "";
   const expectedAuthorization = `${INTERNAL_AUTH_SCHEME} ${configuredToken}`;
-  if (providedAuthorization !== expectedAuthorization) {
+  if (!constantTimeEquals(providedAuthorization, expectedAuthorization)) {
     throw new HttpError(401, "unauthorized", "Service authentication is required.");
   }
+}
+
+// Bytewise XOR accumulator avoids early-exit timing leaks on the bearer secret.
+// TextEncoder is stable across Workers runtime and @cloudflare/vitest-pool-workers.
+function constantTimeEquals(left: string, right: string): boolean {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  if (leftBytes.byteLength !== rightBytes.byteLength) {
+    return false;
+  }
+
+  let mismatch = 0;
+  for (let index = 0; index < leftBytes.byteLength; index += 1) {
+    mismatch |= leftBytes[index] ^ rightBytes[index];
+  }
+
+  return mismatch === 0;
 }

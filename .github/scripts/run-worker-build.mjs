@@ -77,7 +77,6 @@ function hasRenderContract(source) {
     "LANGPULSE_WRANGLER_ENV",
     "LANGPULSE_D1_DATABASE_NAME",
     "LANGPULSE_D1_DATABASE_ID",
-    "LANGPULSE_INTERNAL_API_TOKEN",
   ].every((name) => source[name]?.trim());
 }
 

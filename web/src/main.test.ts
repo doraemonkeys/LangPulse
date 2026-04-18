@@ -256,6 +256,77 @@ describe("createDashboard", () => {
     expect(root.querySelectorAll("option")).toHaveLength(0);
   });
 
+  it("ignores a late-resolving getQuality when a newer submit has already raced ahead", async () => {
+    const firstSeries = makeQuality([
+      {
+        observed_date: "2026-04-02",
+        observed_at: "2026-04-02T02:00:00.000Z",
+        published_at: "2026-04-02T02:05:00.000Z",
+        thresholds: [{ threshold_value: 0, count: 1 }],
+      },
+    ]);
+    const secondSeries = makeQuality([
+      {
+        observed_date: "2026-04-06",
+        observed_at: "2026-04-06T02:00:00.000Z",
+        published_at: "2026-04-06T02:05:00.000Z",
+        thresholds: [{ threshold_value: 0, count: 99 }],
+      },
+    ]);
+
+    const deferreds: Array<{
+      signal: AbortSignal | undefined;
+      resolve: (value: QualityResponse) => void;
+    }> = [];
+    const getQuality = vi.fn().mockImplementation(
+      (input: { signal?: AbortSignal }) =>
+        new Promise<QualityResponse>((resolve) => {
+          deferreds.push({ signal: input.signal, resolve });
+        }),
+    );
+
+    const api = createApiStub({ getQuality });
+    const root = document.querySelector<HTMLElement>("#app");
+    if (root === null) {
+      throw new Error("Missing root node.");
+    }
+
+    const dashboard = createDashboard(root, api);
+    const initPromise = dashboard.init();
+    // init awaits the first loadSeries, so we flush a microtask to let the
+    // first getQuality be registered and then race in the second submit.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const form = root.querySelector<HTMLFormElement>("form.controls");
+    if (form === null) {
+      throw new Error("Missing form.");
+    }
+
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+
+    expect(deferreds).toHaveLength(2);
+    expect(deferreds[0].signal?.aborted).toBe(true);
+    expect(deferreds[1].signal?.aborted).toBe(false);
+
+    // Resolve the newer submit first so it paints the ready state.
+    deferreds[1].resolve(secondSeries);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(root.textContent).toContain("observed at 2026-04-06T02:00:00.000Z");
+
+    // The late first resolution must be ignored — the abort guard in
+    // loadSeries drops its payload rather than overwriting the ready state.
+    deferreds[0].resolve(firstSeries);
+    await initPromise;
+    await Promise.resolve();
+
+    expect(root.textContent).toContain("observed at 2026-04-06T02:00:00.000Z");
+    expect(root.textContent).not.toContain("observed at 2026-04-02T02:00:00.000Z");
+  });
+
   it("shows a metadata loading message before the initial requests resolve", async () => {
     let resolveMetadata: ((value: MetadataResponse) => void) | undefined;
     let resolveLatest: ((value: { observed_date: string | null }) => void) | undefined;

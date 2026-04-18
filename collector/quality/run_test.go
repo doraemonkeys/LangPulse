@@ -583,7 +583,7 @@ func TestFinalizeFailureHandlesNilAndFinalizeErrors(t *testing.T) {
 		t.Fatalf("NewRunner() error = %v", err)
 	}
 
-	if err := runner.finalizeFailure(context.Background(), "run-1", nil); err != nil {
+	if err := runner.finalizeFailure("run-1", nil); err != nil {
 		t.Fatalf("finalizeFailure(nil) error = %v, want nil", err)
 	}
 
@@ -595,7 +595,7 @@ func TestFinalizeFailureHandlesNilAndFinalizeErrors(t *testing.T) {
 		t.Fatalf("NewRunner() error = %v", err)
 	}
 
-	err = runner.finalizeFailure(context.Background(), "run-2", errors.New("search failed"))
+	err = runner.finalizeFailure("run-2", errors.New("search failed"))
 	if err == nil || !strings.Contains(err.Error(), "refresh lease before finalizing") {
 		t.Fatalf("finalizeFailure(refresh error) = %v, want joined refresh error", err)
 	}
@@ -609,7 +609,7 @@ func TestFinalizeFailureHandlesNilAndFinalizeErrors(t *testing.T) {
 		t.Fatalf("NewRunner() error = %v", err)
 	}
 
-	err = runner.finalizeFailure(context.Background(), "run-3", errors.New("search failed"))
+	err = runner.finalizeFailure("run-3", errors.New("search failed"))
 	if err == nil || !strings.Contains(err.Error(), "cannot finalize") {
 		t.Fatalf("finalizeFailure(finalize error) = %v, want joined finalize error", err)
 	}

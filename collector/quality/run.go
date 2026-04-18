@@ -11,6 +11,11 @@ import (
 const (
 	maxErrorSummaryLength = 1024
 	maxLeaseHeartbeatWait = 30 * time.Second
+	// finalizeFailureTimeout bounds the detached context used to mark a run
+	// failed after a cancellation (SIGINT, test deadline) has already propagated
+	// through the caller's ctx. Without a detached deadline, the run would leak
+	// in `running` state until the Worker's lease sweeper reaps it.
+	finalizeFailureTimeout = 30 * time.Second
 )
 
 var (
@@ -109,6 +114,7 @@ func startLeaseController(
 	ingest RunIngestor,
 	runID string,
 	leaseExpiresAt time.Time,
+	cancelWork context.CancelFunc,
 ) leaseController {
 	ctx, cancel := context.WithCancel(parent)
 	leaseErrors := make(chan error, 1)
@@ -116,7 +122,7 @@ func startLeaseController(
 
 	go func() {
 		defer close(leaseDone)
-		maintainLease(ctx, clock, ingest, runID, leaseExpiresAt, leaseErrors)
+		maintainLease(ctx, clock, ingest, runID, leaseExpiresAt, leaseErrors, cancelWork)
 	}()
 
 	return leaseController{
@@ -181,7 +187,13 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 		return RunResult{}, fmt.Errorf("create ingest run: %w", err)
 	}
 
-	lease := startLeaseController(ctx, r.clock, r.ingest, createdRun.RunID, createdRun.LeaseExpiresAt)
+	// workCtx scopes the repository-count + row-upsert calls so the lease
+	// goroutine can abort them the moment a real heartbeat failure is observed,
+	// instead of letting them finish against a stale/revoked lease.
+	workCtx, cancelWorkCtx := context.WithCancel(ctx)
+	defer cancelWorkCtx()
+
+	lease := startLeaseController(ctx, r.clock, r.ingest, createdRun.RunID, createdRun.LeaseExpiresAt, cancelWorkCtx)
 	leaseStopped := false
 	stopLease := func() error {
 		if leaseStopped {
@@ -207,6 +219,10 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 		ObservedAt: createdRun.ObservedAt.UTC(),
 	}
 
+	// finalizeFailure intentionally runs on a detached ctx so the run is marked
+	// failed even when the caller's ctx has been cancelled; threading ctx here
+	// would reintroduce the leak the detach was introduced to fix.
+	//nolint:contextcheck
 	failRun := func(original error) error {
 		if original == nil {
 			return nil
@@ -215,7 +231,15 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 		// Finalization is the last owner of the run state. Stopping the lease
 		// goroutine first preserves a single ordered stream of ingestor writes.
 		leaseErr := stopLease()
-		finalizeErr := r.finalizeFailure(ctx, createdRun.RunID, original)
+		// When the lease goroutine cancels workCtx, row-loop callers observe
+		// context.Canceled and forward that as `original`. The real root cause
+		// lives in `leaseErr` — store it first so D1's ErrorSummary reflects the
+		// actual lease failure instead of the cascaded cancellation.
+		cause := original
+		if leaseErr != nil {
+			cause = errors.Join(leaseErr, original)
+		}
+		finalizeErr := r.finalizeFailure(createdRun.RunID, cause)
 		return errors.Join(finalizeErr, leaseErr)
 	}
 
@@ -226,12 +250,12 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 			}
 
 			query := BuildSearchQuery(registry.WindowDays, language, threshold, observedDate)
-			count, err := r.search.CountRepositories(ctx, observedDate, query)
+			count, err := r.search.CountRepositories(workCtx, observedDate, query)
 			if err != nil {
 				return result, failRun(fmt.Errorf("collect %s threshold %d: %w", language.ID, threshold.Value, err))
 			}
 
-			if err := r.ingest.UpsertRow(ctx, RowUpsert{
+			if err := r.ingest.UpsertRow(workCtx, RowUpsert{
 				RunID:          createdRun.RunID,
 				LanguageID:     language.ID,
 				ThresholdValue: threshold.Value,
@@ -315,10 +339,17 @@ func summarizeError(err error) string {
 	return strings.TrimSpace(summary[:maxErrorSummaryLength])
 }
 
-func (r Runner) finalizeFailure(ctx context.Context, runID string, original error) error {
+func (r Runner) finalizeFailure(runID string, original error) error {
 	if original == nil {
 		return nil
 	}
+
+	// Detached from the caller's ctx: if the run was aborted because the parent
+	// ctx was cancelled (SIGINT, harness deadline), we still need to mark the
+	// run failed server-side. Inheriting the cancelled ctx would leak the run in
+	// `running` state until the Worker's lease sweeper reaps it.
+	ctx, cancel := context.WithTimeout(context.Background(), finalizeFailureTimeout)
+	defer cancel()
 
 	if _, err := r.ingest.HeartbeatRun(ctx, runID); err != nil {
 		return errors.Join(original, fmt.Errorf("refresh lease before finalizing run %s: %w", runID, err))
@@ -342,6 +373,7 @@ func maintainLease(
 	runID string,
 	leaseExpiresAt time.Time,
 	leaseErrors chan<- error,
+	cancelWork context.CancelFunc,
 ) {
 	currentLease := leaseExpiresAt.UTC()
 
@@ -358,9 +390,21 @@ func maintainLease(
 
 		heartbeat, err := ingest.HeartbeatRun(ctx, runID)
 		if err != nil {
+			// Filter shutdown-origin errors: if ctx was already cancelled,
+			// lease.Stop() reaped a heartbeat that was mid-flight. That's not a
+			// lease failure — the caller is tearing us down.
+			if ctx.Err() != nil {
+				return
+			}
 			select {
 			case leaseErrors <- err:
 			default:
+			}
+			// Propagate the failure to the caller's work ctx so in-flight
+			// search/upsert calls abort immediately instead of waiting for the
+			// next row-loop iteration's PendingError() poll.
+			if cancelWork != nil {
+				cancelWork()
 			}
 			return
 		}
