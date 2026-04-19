@@ -299,8 +299,13 @@ async function expireLease(options, runId) {
 
 async function resetObservedDate(options, observedDate) {
   const quotedObservedDate = observedDate.replaceAll("'", "''");
+  // D1's HTTP API rejects explicit BEGIN TRANSACTION/COMMIT/SAVEPOINT (error
+  // code 7500) — it manages transactions itself. The deletes are ordered so
+  // the run_rows cleanup resolves its run_id subquery before the parent
+  // quality_30d_runs row is removed; each statement runs independently, which
+  // is acceptable for smoke reset since a partial failure just causes the
+  // next smoke run to surface the leftover state.
   const sql = [
-    "BEGIN TRANSACTION;",
     `DELETE FROM quality_30d_publications WHERE observed_date = '${quotedObservedDate}';`,
     "DELETE FROM quality_30d_run_rows",
     "WHERE run_id IN (",
@@ -309,7 +314,6 @@ async function resetObservedDate(options, observedDate) {
     `  WHERE observed_date = '${quotedObservedDate}'`,
     ");",
     `DELETE FROM quality_30d_runs WHERE observed_date = '${quotedObservedDate}';`,
-    "COMMIT;",
   ].join(" ");
 
   const args = [
