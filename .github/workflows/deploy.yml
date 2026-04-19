@@ -31,6 +31,12 @@ env:
   LANGPULSE_WRANGLER_TEMPLATE: worker/wrangler.toml
   LANGPULSE_WRANGLER_ENV: production
   LANGPULSE_SMOKE_WRANGLER_ENV: smoke
+  # cloudflare/wrangler-action@v3 still ships Node.js 20 (no v4 has been
+  # published as of 2026-04). The runner will force Node 24 starting
+  # 2026-06-02, but opting in now silences the deprecation warning and
+  # surfaces any incompatibility before the forced flip.
+  # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   apply-migrations:
