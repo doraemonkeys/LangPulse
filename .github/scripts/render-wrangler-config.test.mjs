@@ -117,12 +117,13 @@ describe("renderWranglerConfig", () => {
     assert.match(rendered, /name = "HEALTH_RATE_LIMITER"/);
     assert.match(rendered, /type = "ratelimit"/);
     assert.match(rendered, /simple = \{ limit = 30, period = 60 \}/);
-    // Regression guard: the plaintext INTERNAL_API_TOKEN binding must never
-    // reappear in the appended env-scoped block — the deploy workflow pushes
-    // it as a Worker secret instead. The dev-only `[vars]` sentinel in the
-    // template body is preserved verbatim for Vitest/wrangler-dev.
-    const appended = rendered.slice(TEMPLATE_FIXTURE.trimEnd().length);
-    assert.equal(appended.includes("INTERNAL_API_TOKEN"), false);
+    // The rendered config is CI-only; the dev-only top-level [vars] block
+    // (INTERNAL_API_TOKEN sentinel + RUN_LEASE_DURATION_SECONDS) must be
+    // stripped so wrangler does not warn about top-level vars not being
+    // inherited to env.NAME.vars. INTERNAL_API_TOKEN is pushed as a Worker
+    // secret at deploy time; RUN_LEASE_DURATION_SECONDS is re-emitted per env.
+    assert.equal(rendered.includes("INTERNAL_API_TOKEN"), false);
+    assert.doesNotMatch(rendered, /^\[vars\]$/m);
   });
 
   it("emits migrations_dir inside the env-scoped [[d1_databases]] block when provided", () => {
@@ -227,9 +228,10 @@ describe("writeRenderedWranglerConfig", () => {
     assert.equal(writtenPath, outputPath);
     const contents = readFileSync(outputPath, "utf8");
     assert.match(contents, /\[env\.smoke\.vars\]/);
-    // Same regression guard as renderWranglerConfig: appended env block must
-    // not carry INTERNAL_API_TOKEN; the template sentinel is left intact.
-    const appended = contents.slice(TEMPLATE_FIXTURE.trimEnd().length);
-    assert.equal(appended.includes("INTERNAL_API_TOKEN"), false);
+    // Mirrors renderWranglerConfig: the rendered config must strip the
+    // dev-only top-level [vars] block so wrangler doesn't emit the
+    // "vars not inherited to envs" warning about INTERNAL_API_TOKEN.
+    assert.equal(contents.includes("INTERNAL_API_TOKEN"), false);
+    assert.doesNotMatch(contents, /^\[vars\]$/m);
   });
 });

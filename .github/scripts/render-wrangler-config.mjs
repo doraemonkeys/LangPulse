@@ -42,7 +42,14 @@ export function resolveRenderOptions(source) {
 export function renderWranglerConfig(options) {
   validateEnvironmentName(options.environmentName);
 
-  const template = readFileSync(options.templatePath, "utf8").trimEnd();
+  // The rendered config is CI-only: strip the dev-only top-level [vars] block
+  // so wrangler doesn't warn "vars.INTERNAL_API_TOKEN exists at the top level,
+  // but not on env.NAME.vars" (top-level vars aren't inherited to envs). The
+  // deploy workflow pushes INTERNAL_API_TOKEN as a Worker secret, and
+  // RUN_LEASE_DURATION_SECONDS is re-emitted per env below.
+  const template = stripTopLevelVarsBlock(
+    readFileSync(options.templatePath, "utf8"),
+  ).trimEnd();
 
   // `migrations_dir` is a field of each [[d1_databases]] entry — wrangler
   // rejects it at the top level and ignores it outside the D1 binding. CI
@@ -115,4 +122,24 @@ function isCliEntryPoint(moduleUrl) {
 
 function quoteTomlString(value) {
   return JSON.stringify(value);
+}
+
+function stripTopLevelVarsBlock(body) {
+  const lines = body.split("\n");
+  const out = [];
+  let insideVars = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!insideVars && trimmed === "[vars]") {
+      insideVars = true;
+      continue;
+    }
+    if (insideVars && trimmed.startsWith("[")) {
+      insideVars = false;
+    }
+    if (!insideVars) {
+      out.push(line);
+    }
+  }
+  return out.join("\n");
 }

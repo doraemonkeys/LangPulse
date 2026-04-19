@@ -91,6 +91,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
           command: >-
             d1 migrations apply ${{ env.LANGPULSE_D1_DATABASE }}
             --remote
@@ -102,6 +103,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
           command: >-
             d1 migrations apply ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
             --remote
@@ -176,6 +178,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
           environment: ${{ env.LANGPULSE_WRANGLER_ENV }}
           command: >-
             deploy
@@ -191,6 +194,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
           environment: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           command: >-
             deploy
