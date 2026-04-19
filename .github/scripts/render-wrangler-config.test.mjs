@@ -125,7 +125,7 @@ describe("renderWranglerConfig", () => {
     assert.equal(appended.includes("INTERNAL_API_TOKEN"), false);
   });
 
-  it("emits top-level migrations_dir before any [section] when provided", () => {
+  it("emits migrations_dir inside the env-scoped [[d1_databases]] block when provided", () => {
     const templatePath = path.join(workdir, "wrangler.toml");
     writeFileSync(templatePath, TEMPLATE_FIXTURE);
 
@@ -140,24 +140,25 @@ describe("renderWranglerConfig", () => {
       migrationsDir: "/workspace/migrations",
     });
 
-    const migrationsDirIndex = rendered.indexOf(
-      'migrations_dir = "/workspace/migrations"',
+    // Wrangler rejects top-level migrations_dir with an "Unexpected fields"
+    // warning and ignores it outside [[d1_databases]]; the field must live
+    // inside the env-scoped D1 binding to actually drive migration resolution.
+    const d1BlockStart = rendered.indexOf(
+      "[[env.production.d1_databases]]",
     );
-    assert.notEqual(
-      migrationsDirIndex,
-      -1,
-      "rendered output must contain migrations_dir",
-    );
+    assert.notEqual(d1BlockStart, -1, "rendered output must contain env-scoped d1 block");
 
-    // Any `[section]` appearing before migrations_dir would make TOML parse it
-    // as a scoped key — guard against that regression explicitly.
-    const firstSectionMatch = rendered.match(/^\[[^\n]*$/m);
-    assert.ok(firstSectionMatch, "rendered output must contain at least one section");
-    const firstSectionIndex = rendered.indexOf(firstSectionMatch[0]);
-    assert.ok(
-      migrationsDirIndex < firstSectionIndex,
-      "migrations_dir must be emitted before any [section] header",
-    );
+    const nextSectionMatch = rendered
+      .slice(d1BlockStart + "[[env.production.d1_databases]]".length)
+      .match(/^\[/m);
+    const d1BlockEnd =
+      nextSectionMatch === null
+        ? rendered.length
+        : d1BlockStart +
+          "[[env.production.d1_databases]]".length +
+          nextSectionMatch.index;
+    const d1Block = rendered.slice(d1BlockStart, d1BlockEnd);
+    assert.match(d1Block, /migrations_dir = "\/workspace\/migrations"/);
   });
 
   it("omits migrations_dir when not provided", () => {

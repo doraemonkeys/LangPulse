@@ -43,33 +43,35 @@ export function renderWranglerConfig(options) {
   validateEnvironmentName(options.environmentName);
 
   const template = readFileSync(options.templatePath, "utf8").trimEnd();
-  // `migrations_dir` must be emitted before any [section] header so TOML
-  // parses it as a top-level key — the template ends with `[env.smoke]`, so
-  // placing it after the template body would scope it to that env instead.
-  const migrationsPrefix = options.migrationsDir
-    ? [
-        `# CI-rendered top-level directive: resolves migrations relative to the`,
-        `# repository instead of the rendered config's tmp directory.`,
-        `migrations_dir = ${quoteTomlString(options.migrationsDir)}`,
-        "",
-      ].join("\n")
-    : "";
+
+  // `migrations_dir` is a field of each [[d1_databases]] entry — wrangler
+  // rejects it at the top level and ignores it outside the D1 binding. CI
+  // passes an absolute path so resolution is stable regardless of where the
+  // rendered config ends up on disk (usually $RUNNER_TEMP).
+  const d1DatabaseBlock = [
+    `[[env.${options.environmentName}.d1_databases]]`,
+    `binding = ${quoteTomlString(options.databaseBinding)}`,
+    `database_name = ${quoteTomlString(options.databaseName)}`,
+    `database_id = ${quoteTomlString(options.databaseId)}`,
+  ];
+  if (options.migrationsDir) {
+    d1DatabaseBlock.push(
+      `migrations_dir = ${quoteTomlString(options.migrationsDir)}`,
+    );
+  }
 
   // INTERNAL_API_TOKEN is pushed as a Worker secret by the deploy workflow
   // (cloudflare/wrangler-action@v3 `secrets:` input) so it never appears as a
   // plaintext `[vars]` entry in the deployed configuration.
   return [
-    migrationsPrefix + template,
+    template,
     "",
     `# CI appends deploy-time bindings so each environment resolves the worker`,
     `# lease duration and D1 database from the same configuration.`,
     `[env.${options.environmentName}.vars]`,
     `RUN_LEASE_DURATION_SECONDS = ${quoteTomlString(options.runLeaseDurationSeconds)}`,
     "",
-    `[[env.${options.environmentName}.d1_databases]]`,
-    `binding = ${quoteTomlString(options.databaseBinding)}`,
-    `database_name = ${quoteTomlString(options.databaseName)}`,
-    `database_id = ${quoteTomlString(options.databaseId)}`,
+    ...d1DatabaseBlock,
     "",
     `[[env.${options.environmentName}.unsafe.bindings]]`,
     `name = ${quoteTomlString(HEALTH_RATE_LIMITER_NAME)}`,
