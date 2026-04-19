@@ -67,6 +67,18 @@ describe("resolveRenderOptions", () => {
   it("does not require LANGPULSE_INTERNAL_API_TOKEN", () => {
     assert.doesNotThrow(() => resolveRenderOptions(makeSource()));
   });
+
+  it("leaves migrationsDir undefined when LANGPULSE_MIGRATIONS_DIR is absent", () => {
+    const options = resolveRenderOptions(makeSource());
+    assert.equal(options.migrationsDir, undefined);
+  });
+
+  it("honors LANGPULSE_MIGRATIONS_DIR when provided", () => {
+    const options = resolveRenderOptions(
+      makeSource({ LANGPULSE_MIGRATIONS_DIR: "/workspace/migrations" }),
+    );
+    assert.equal(options.migrationsDir, "/workspace/migrations");
+  });
 });
 
 describe("renderWranglerConfig", () => {
@@ -111,6 +123,58 @@ describe("renderWranglerConfig", () => {
     // template body is preserved verbatim for Vitest/wrangler-dev.
     const appended = rendered.slice(TEMPLATE_FIXTURE.trimEnd().length);
     assert.equal(appended.includes("INTERNAL_API_TOKEN"), false);
+  });
+
+  it("emits top-level migrations_dir before any [section] when provided", () => {
+    const templatePath = path.join(workdir, "wrangler.toml");
+    writeFileSync(templatePath, TEMPLATE_FIXTURE);
+
+    const rendered = renderWranglerConfig({
+      templatePath,
+      outputPath: path.join(workdir, "out.toml"),
+      environmentName: "production",
+      databaseName: "langpulse",
+      databaseId: "00000000-0000-0000-0000-000000000000",
+      runLeaseDurationSeconds: "300",
+      databaseBinding: "DB",
+      migrationsDir: "/workspace/migrations",
+    });
+
+    const migrationsDirIndex = rendered.indexOf(
+      'migrations_dir = "/workspace/migrations"',
+    );
+    assert.notEqual(
+      migrationsDirIndex,
+      -1,
+      "rendered output must contain migrations_dir",
+    );
+
+    // Any `[section]` appearing before migrations_dir would make TOML parse it
+    // as a scoped key — guard against that regression explicitly.
+    const firstSectionMatch = rendered.match(/^\[[^\n]*$/m);
+    assert.ok(firstSectionMatch, "rendered output must contain at least one section");
+    const firstSectionIndex = rendered.indexOf(firstSectionMatch[0]);
+    assert.ok(
+      migrationsDirIndex < firstSectionIndex,
+      "migrations_dir must be emitted before any [section] header",
+    );
+  });
+
+  it("omits migrations_dir when not provided", () => {
+    const templatePath = path.join(workdir, "wrangler.toml");
+    writeFileSync(templatePath, TEMPLATE_FIXTURE);
+
+    const rendered = renderWranglerConfig({
+      templatePath,
+      outputPath: path.join(workdir, "out.toml"),
+      environmentName: "production",
+      databaseName: "langpulse",
+      databaseId: "00000000-0000-0000-0000-000000000000",
+      runLeaseDurationSeconds: "300",
+      databaseBinding: "DB",
+    });
+
+    assert.equal(rendered.includes("migrations_dir"), false);
   });
 
   it("rejects environment names that contain shell-unsafe characters", () => {

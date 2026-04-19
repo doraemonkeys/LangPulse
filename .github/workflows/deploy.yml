@@ -73,6 +73,7 @@ jobs:
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
+          LANGPULSE_MIGRATIONS_DIR: ${{ github.workspace }}/migrations
         run: node .github/scripts/render-wrangler-config.mjs
 
       - name: Render Smoke Wrangler Config
@@ -82,6 +83,7 @@ jobs:
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
+          LANGPULSE_MIGRATIONS_DIR: ${{ github.workspace }}/migrations
         run: node .github/scripts/render-wrangler-config.mjs
 
       - name: Apply Production Migrations

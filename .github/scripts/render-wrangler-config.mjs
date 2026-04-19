@@ -33,6 +33,9 @@ export function resolveRenderOptions(source) {
       DEFAULT_RUN_LEASE_DURATION_SECONDS,
     databaseBinding:
       source.LANGPULSE_D1_BINDING?.trim() || DEFAULT_DATABASE_BINDING,
+    // Only migration-applying callers need this; other callers (deploy, d1
+    // execute, smoke tests) omit it so wrangler skips migration resolution.
+    migrationsDir: source.LANGPULSE_MIGRATIONS_DIR?.trim() || undefined,
   };
 }
 
@@ -40,11 +43,23 @@ export function renderWranglerConfig(options) {
   validateEnvironmentName(options.environmentName);
 
   const template = readFileSync(options.templatePath, "utf8").trimEnd();
+  // `migrations_dir` must be emitted before any [section] header so TOML
+  // parses it as a top-level key — the template ends with `[env.smoke]`, so
+  // placing it after the template body would scope it to that env instead.
+  const migrationsPrefix = options.migrationsDir
+    ? [
+        `# CI-rendered top-level directive: resolves migrations relative to the`,
+        `# repository instead of the rendered config's tmp directory.`,
+        `migrations_dir = ${quoteTomlString(options.migrationsDir)}`,
+        "",
+      ].join("\n")
+    : "";
+
   // INTERNAL_API_TOKEN is pushed as a Worker secret by the deploy workflow
   // (cloudflare/wrangler-action@v3 `secrets:` input) so it never appears as a
   // plaintext `[vars]` entry in the deployed configuration.
   return [
-    template,
+    migrationsPrefix + template,
     "",
     `# CI appends deploy-time bindings so each environment resolves the worker`,
     `# lease duration and D1 database from the same configuration.`,
