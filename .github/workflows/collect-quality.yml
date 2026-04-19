@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
@@ -103,6 +103,6 @@ jobs:
           observed_date="$(date -u +%F)"
           wrangler d1 execute "${LANGPULSE_D1_DATABASE}" \
             --remote \
-            --config "${RUNNER_TEMP}/langpulse.production.wrangler.toml" \
+            --config "${GITHUB_WORKSPACE}/worker/langpulse.production.wrangler.toml" \
             --env "${LANGPULSE_WRANGLER_ENV}" \
             --command "SELECT observed_date, attempt_no, status, actual_rows, expected_rows, started_at, finished_at, error_summary FROM quality_30d_runs WHERE observed_date = '${observed_date}' ORDER BY attempt_no;"

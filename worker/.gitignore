@@ -1,0 +1,4 @@
+# CI-rendered Wrangler configs; see .github/scripts/render-wrangler-config.mjs.
+# Produced alongside wrangler.toml so wrangler's relative paths (main,
+# assets.directory) resolve from the same directory as the template.
+langpulse.*.wrangler.toml

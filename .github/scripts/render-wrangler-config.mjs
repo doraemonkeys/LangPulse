@@ -53,8 +53,9 @@ export function renderWranglerConfig(options) {
 
   // `migrations_dir` is a field of each [[d1_databases]] entry — wrangler
   // rejects it at the top level and ignores it outside the D1 binding. CI
-  // passes an absolute path so resolution is stable regardless of where the
-  // rendered config ends up on disk (usually $RUNNER_TEMP).
+  // passes an absolute path; the rendered config itself lives next to the
+  // template inside worker/ so wrangler's other relative paths (main,
+  // assets.directory) also resolve correctly.
   const d1DatabaseBlock = [
     `[[env.${options.environmentName}.d1_databases]]`,
     `binding = ${quoteTomlString(options.databaseBinding)}`,

@@ -69,7 +69,7 @@ jobs:
       - name: Render Production Wrangler Config
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
@@ -79,7 +79,7 @@ jobs:
       - name: Render Smoke Wrangler Config
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
@@ -95,7 +95,7 @@ jobs:
           command: >-
             d1 migrations apply ${{ env.LANGPULSE_D1_DATABASE }}
             --remote
-            --config ${{ runner.temp }}/langpulse.production.wrangler.toml
+            --config ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
             --env ${{ env.LANGPULSE_WRANGLER_ENV }}
 
       - name: Apply Smoke Migrations
@@ -107,7 +107,7 @@ jobs:
           command: >-
             d1 migrations apply ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
             --remote
-            --config ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+            --config ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
             --env ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
 
   deploy-worker:
@@ -145,7 +145,7 @@ jobs:
       - name: Render Production Wrangler Config
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_D1_DATABASE_ID }}
@@ -154,7 +154,7 @@ jobs:
       - name: Render Smoke Wrangler Config
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
@@ -162,13 +162,13 @@ jobs:
 
       - name: Dry Run Production Worker
         env:
-          LANGPULSE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.production.wrangler.toml
+          LANGPULSE_WRANGLER_CONFIG: ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_WRANGLER_ENV }}
         run: node .github/scripts/run-workspace-command.mjs worker script build
 
       - name: Dry Run Smoke Worker
         env:
-          LANGPULSE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_CONFIG: ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
         run: node .github/scripts/run-workspace-command.mjs worker script build
 
@@ -182,7 +182,7 @@ jobs:
           environment: ${{ env.LANGPULSE_WRANGLER_ENV }}
           command: >-
             deploy
-            --config ${{ runner.temp }}/langpulse.production.wrangler.toml
+            --config ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
           secrets: |
             INTERNAL_API_TOKEN
         env:
@@ -198,7 +198,7 @@ jobs:
           environment: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           command: >-
             deploy
-            --config ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+            --config ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           secrets: |
             INTERNAL_API_TOKEN
         env:
@@ -240,7 +240,7 @@ jobs:
       - name: Render Smoke Wrangler Config
         env:
           LANGPULSE_WRANGLER_TEMPLATE: ${{ env.LANGPULSE_WRANGLER_TEMPLATE }}
-          LANGPULSE_WRANGLER_OUTPUT: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_WRANGLER_OUTPUT: ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           LANGPULSE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           LANGPULSE_D1_DATABASE_NAME: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
           LANGPULSE_D1_DATABASE_ID: ${{ env.LANGPULSE_SMOKE_D1_DATABASE_ID }}
@@ -252,7 +252,7 @@ jobs:
           LANGPULSE_SMOKE_BASE_URL: ${{ needs.deploy-worker.outputs.smoke-deployment-url }}
           LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
           LANGPULSE_SMOKE_D1_DATABASE: ${{ env.LANGPULSE_SMOKE_D1_DATABASE }}
-          LANGPULSE_SMOKE_WRANGLER_CONFIG: ${{ runner.temp }}/langpulse.smoke.wrangler.toml
+          LANGPULSE_SMOKE_WRANGLER_CONFIG: ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
           LANGPULSE_SMOKE_WRANGLER_ENV: ${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}
           LANGPULSE_SMOKE_RESET_BEFORE_LIFECYCLE: "true"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
