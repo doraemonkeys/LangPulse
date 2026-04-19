@@ -9,6 +9,9 @@ permissions:
 
 env:
   LANGPULSE_GO_MIN_COVERAGE: "90"
+  # Pin the collector linter so `make collector-lint` resolves the same binary
+  # locally and in CI. Bump in lockstep with collector/.golangci.yml's schema.
+  LANGPULSE_GOLANGCI_LINT_VERSION: "v2.1.6"
 
 jobs:
   validate:
@@ -37,6 +40,13 @@ jobs:
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Install golangci-lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \
+            sh -s -- -b "$(go env GOPATH)/bin" "${LANGPULSE_GOLANGCI_LINT_VERSION}"
 
       - name: Validate Repository Contract
         shell: bash
