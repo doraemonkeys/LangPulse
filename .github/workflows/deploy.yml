@@ -183,10 +183,24 @@ jobs:
           command: >-
             deploy
             --config ${{ github.workspace }}/worker/langpulse.production.wrangler.toml
-          secrets: |
-            INTERNAL_API_TOKEN
+
+      # wrangler-action's `secrets:` input invokes `wrangler secret bulk` without
+      # `--config`, which defaults to the checked-in template's empty
+      # [env.production] stub and fails with "Required Worker name missing".
+      # Push the secret ourselves against the rendered env-scoped config so the
+      # worker name and environment both resolve correctly. Runs after deploy so
+      # first-time runs can create the Worker before a secret is attached.
+      - name: Upload Production Worker Secret
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_INGEST_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$INTERNAL_API_TOKEN" | npx --yes wrangler@4 secret put INTERNAL_API_TOKEN \
+            --config "${{ github.workspace }}/worker/langpulse.production.wrangler.toml" \
+            --env "${{ env.LANGPULSE_WRANGLER_ENV }}"
 
       - name: Deploy Smoke Worker
         id: deploy-smoke
@@ -199,10 +213,18 @@ jobs:
           command: >-
             deploy
             --config ${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml
-          secrets: |
-            INTERNAL_API_TOKEN
+
+      - name: Upload Smoke Worker Secret
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           INTERNAL_API_TOKEN: ${{ secrets.LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$INTERNAL_API_TOKEN" | npx --yes wrangler@4 secret put INTERNAL_API_TOKEN \
+            --config "${{ github.workspace }}/worker/langpulse.smoke.wrangler.toml" \
+            --env "${{ env.LANGPULSE_SMOKE_WRANGLER_ENV }}"
 
   smoke-api:
     name: Smoke Test API
