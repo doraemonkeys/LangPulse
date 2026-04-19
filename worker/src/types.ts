@@ -5,6 +5,7 @@ export interface WorkerEnv {
   DB: D1Database;
   INTERNAL_API_TOKEN: string;
   RUN_LEASE_DURATION_SECONDS?: string;
+  HEALTH_RATE_LIMITER: RateLimit;
 }
 
 export interface LanguageRegistryEntry {

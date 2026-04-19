@@ -1,5 +1,5 @@
 import { metricsRegistry } from "./config-registry";
-import { NO_STORE_CACHE_CONTROL } from "./constants";
+import { DEFAULT_RUN_LEASE_DURATION_SECONDS, NO_STORE_CACHE_CONTROL } from "./constants";
 import { errorResponse, HttpError, jsonResponse } from "./http";
 import { checkDatabaseHealth } from "./public-quality";
 import { handleQualityRunsCreate } from "./routes/internal/quality-runs-create";
@@ -64,7 +64,8 @@ function maybeHandleInternalHeartbeat(
   }
 
   assertMethod(request, "POST", "/internal/quality-runs/{run_id}/heartbeat");
-  return handleQualityRunsHeartbeat(request, context, decodePathSegment(heartbeatMatch[1]));
+  // Capture groups are guaranteed by INTERNAL_HEARTBEAT_PATH on a non-null match.
+  return handleQualityRunsHeartbeat(request, context, decodePathSegment(heartbeatMatch[1]!));
 }
 
 function maybeHandleInternalRowUpsert(
@@ -78,12 +79,13 @@ function maybeHandleInternalRowUpsert(
   }
 
   assertMethod(request, "PUT", "/internal/quality-runs/{run_id}/rows/{language_id}/{threshold_value}");
+  // Capture groups are guaranteed by INTERNAL_ROW_UPSERT_PATH on a non-null match.
   return handleQualityRunsRowUpsert(
     request,
     context,
-    decodePathSegment(rowUpsertMatch[1]),
-    decodePathSegment(rowUpsertMatch[2]),
-    decodePathSegment(rowUpsertMatch[3]),
+    decodePathSegment(rowUpsertMatch[1]!),
+    decodePathSegment(rowUpsertMatch[2]!),
+    decodePathSegment(rowUpsertMatch[3]!),
   );
 }
 
@@ -98,7 +100,8 @@ function maybeHandleInternalFinalize(
   }
 
   assertMethod(request, "POST", "/internal/quality-runs/{run_id}/finalize");
-  return handleQualityRunsFinalize(request, context, decodePathSegment(finalizeMatch[1]));
+  // Capture group is guaranteed by INTERNAL_FINALIZE_PATH on a non-null match.
+  return handleQualityRunsFinalize(request, context, decodePathSegment(finalizeMatch[1]!));
 }
 
 function maybeHandleMetadata(
@@ -140,7 +143,18 @@ function maybeHandleQualityRange(
   return handleQualityRange(request, context);
 }
 
-async function createHealthResponse(context: RequestContext): Promise<Response> {
+async function createHealthResponse(
+  request: Request,
+  context: RequestContext,
+): Promise<Response> {
+  // cf-connecting-ip is absent in local/test runs; fall back to a shared bucket
+  // so abuse is still bounded there.
+  const clientIp = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const outcome = await context.env.HEALTH_RATE_LIMITER.limit({ key: clientIp });
+  if (!outcome.success) {
+    throw new HttpError(429, "rate_limited", "Too many health checks.");
+  }
+
   const ok = await checkDatabaseHealth(context);
   return jsonResponse(
     { ok },
@@ -162,7 +176,7 @@ function maybeHandleHealth(
   }
 
   assertMethod(request, "GET", "/api/health");
-  return createHealthResponse(context);
+  return createHealthResponse(request, context);
 }
 
 export function createWorker(
@@ -172,7 +186,7 @@ export function createWorker(
     now: overrides.now ?? (() => new Date()),
     randomUUID: overrides.randomUUID ?? (() => crypto.randomUUID()),
     registry: overrides.registry ?? metricsRegistry,
-    runLeaseDurationSeconds: overrides.runLeaseDurationSeconds ?? 300,
+    runLeaseDurationSeconds: overrides.runLeaseDurationSeconds ?? DEFAULT_RUN_LEASE_DURATION_SECONDS,
   };
 
   return {

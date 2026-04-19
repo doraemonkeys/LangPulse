@@ -31,7 +31,8 @@ function constantTimeEquals(left: string, right: string): boolean {
 
   let mismatch = 0;
   for (let index = 0; index < leftBytes.byteLength; index += 1) {
-    mismatch |= leftBytes[index] ^ rightBytes[index];
+    // Bounded by byteLength guard above; the `!` silences noUncheckedIndexedAccess.
+    mismatch |= leftBytes[index]! ^ rightBytes[index]!;
   }
 
   return mismatch === 0;

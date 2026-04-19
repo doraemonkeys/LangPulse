@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/langpulse/collector/internal/cleanup"
+	"github.com/langpulse/collector/internal/errjoin"
 	"github.com/langpulse/collector/quality"
 )
 
@@ -28,11 +28,21 @@ var ErrIncompleteResults = errors.New("github search returned incomplete results
 
 type sleepFunc func(context.Context, time.Duration) error
 
+// Clock abstracts time retrieval for retry/backoff calculations so tests can
+// advance time deterministically.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now().UTC() }
+
 type Client struct {
 	baseURL     string
 	token       string
 	httpClient  *http.Client
-	now         func() time.Time
+	clock       Clock
 	sleep       sleepFunc
 	maxAttempts int
 	baseBackoff time.Duration
@@ -61,7 +71,7 @@ func NewClient(token string, options ...Option) (*Client, error) {
 		baseURL:     defaultBaseURL,
 		token:       strings.TrimSpace(token),
 		httpClient:  http.DefaultClient,
-		now:         func() time.Time { return time.Now().UTC() },
+		clock:       realClock{},
 		sleep:       sleepWithContext,
 		maxAttempts: defaultMaxAttempts,
 		baseBackoff: defaultBaseBackoff,
@@ -92,10 +102,10 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-func WithClock(now func() time.Time) Option {
+func WithClock(clock Clock) Option {
 	return func(client *Client) {
-		if now != nil {
-			client.now = now
+		if clock != nil {
+			client.clock = clock
 		}
 	}
 }
@@ -140,7 +150,7 @@ func (c *Client) CountRepositories(ctx context.Context, observedDate quality.Day
 			return 0, err
 		}
 
-		delay, ok := quality.ClampRetryDelay(c.now(), observedDate, retryDelay)
+		delay, ok := quality.ClampRetryDelay(c.clock.Now(), observedDate, retryDelay)
 		if !ok {
 			return 0, fmt.Errorf("%w: %w", quality.ErrRetryWindowClosed, err)
 		}
@@ -172,16 +182,16 @@ func (c *Client) executeRequest(ctx context.Context, query string, attempt int) 
 
 	if response.StatusCode != http.StatusOK {
 		apiErr := decodeAPIError(response)
-		apiErr = cleanup.Join(apiErr, "close github response body", response.Body.Close)
+		apiErr = errjoin.Join(apiErr, "close github response body", response.Body.Close)
 		if !shouldRetry(response.StatusCode) {
 			return 0, -1, apiErr
 		}
 
-		return 0, retryDelay(response.Header, c.now(), attempt, c.baseBackoff, c.maxBackoff), apiErr
+		return 0, retryDelay(response.Header, c.clock.Now(), attempt, c.baseBackoff, c.maxBackoff), apiErr
 	}
 
 	defer func() {
-		err = cleanup.Join(err, "close github response body", response.Body.Close)
+		err = errjoin.Join(err, "close github response body", response.Body.Close)
 	}()
 
 	var payload responsePayload

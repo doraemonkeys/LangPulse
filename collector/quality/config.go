@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/langpulse/collector/internal/cleanup"
+	"github.com/langpulse/collector/internal/errjoin"
 )
 
 const (
@@ -129,7 +129,7 @@ func LoadConfigFile(path string) (cfg Config, err error) {
 		return Config{}, fmt.Errorf("open metrics config %q: %w", path, err)
 	}
 	defer func() {
-		err = cleanup.Join(err, fmt.Sprintf("close metrics config %q", path), file.Close)
+		err = errjoin.Join(err, fmt.Sprintf("close metrics config %q", path), file.Close)
 	}()
 
 	cfg, err = LoadConfig(file)

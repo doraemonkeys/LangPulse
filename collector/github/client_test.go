@@ -15,6 +15,12 @@ import (
 	"github.com/langpulse/collector/quality"
 )
 
+type stubClock struct {
+	now time.Time
+}
+
+func (c stubClock) Now() time.Time { return c.now }
+
 func TestNewClientRequiresToken(t *testing.T) {
 	if _, err := NewClient(""); err == nil {
 		t.Fatal("NewClient() error = nil, want missing token error")
@@ -94,9 +100,7 @@ func TestCountRepositoriesRetriesWithinObservedDate(t *testing.T) {
 		"token",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
-		WithClock(func() time.Time {
-			return time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
-		}),
+		WithClock(stubClock{now: time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)}),
 		WithSleep(func(ctx context.Context, duration time.Duration) error {
 			sleeps = append(sleeps, duration)
 			return nil
@@ -137,9 +141,7 @@ func TestCountRepositoriesStopsAtDayBoundary(t *testing.T) {
 		"token",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
-		WithClock(func() time.Time {
-			return time.Date(2026, 4, 7, 23, 59, 45, 0, time.UTC)
-		}),
+		WithClock(stubClock{now: time.Date(2026, 4, 7, 23, 59, 45, 0, time.UTC)}),
 		WithSleep(func(ctx context.Context, duration time.Duration) error {
 			t.Fatalf("sleep() called with %s, want no retry sleep", duration)
 			return nil

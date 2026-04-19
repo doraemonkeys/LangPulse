@@ -8,6 +8,15 @@ const DEFAULT_RUN_LEASE_DURATION_SECONDS = "300";
 const DEFAULT_DATABASE_BINDING = "DB";
 const ENVIRONMENT_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+// Cloudflare bindings (vars, d1, unsafe.*) are non-inheritable: anything
+// declared at the top level is ignored when wrangler deploys with --env=NAME.
+// The rate limiter therefore has to be re-emitted under each env scope or
+// /api/health will throw at runtime against an undefined binding.
+const HEALTH_RATE_LIMITER_NAME = "HEALTH_RATE_LIMITER";
+const HEALTH_RATE_LIMITER_NAMESPACE_ID = "1001";
+const HEALTH_RATE_LIMITER_LIMIT = 30;
+const HEALTH_RATE_LIMITER_PERIOD_SECONDS = 60;
+
 if (isCliEntryPoint(import.meta.url)) {
   writeRenderedWranglerConfig(resolveRenderOptions(process.env));
 }
@@ -46,6 +55,12 @@ export function renderWranglerConfig(options) {
     `binding = ${quoteTomlString(options.databaseBinding)}`,
     `database_name = ${quoteTomlString(options.databaseName)}`,
     `database_id = ${quoteTomlString(options.databaseId)}`,
+    "",
+    `[[env.${options.environmentName}.unsafe.bindings]]`,
+    `name = ${quoteTomlString(HEALTH_RATE_LIMITER_NAME)}`,
+    `type = "ratelimit"`,
+    `namespace_id = ${quoteTomlString(HEALTH_RATE_LIMITER_NAMESPACE_ID)}`,
+    `simple = { limit = ${HEALTH_RATE_LIMITER_LIMIT}, period = ${HEALTH_RATE_LIMITER_PERIOD_SECONDS} }`,
     "",
   ].join("\n");
 }

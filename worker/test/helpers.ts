@@ -73,17 +73,13 @@ export function makeInternalRequest(
     authorization: `Bearer ${TEST_INTERNAL_TOKEN}`,
   });
 
-  let requestBody: string | undefined;
+  const init: RequestInit = { method, headers };
   if (body !== undefined) {
     headers.set("content-type", "application/json");
-    requestBody = JSON.stringify(body);
+    init.body = JSON.stringify(body);
   }
 
-  return new Request(`${TEST_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: requestBody,
-  });
+  return new Request(`${TEST_BASE_URL}${path}`, init);
 }
 
 export function makePublicRequest(path: string): Request {

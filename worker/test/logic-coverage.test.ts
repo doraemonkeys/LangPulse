@@ -394,13 +394,13 @@ describe("supporting logic coverage", () => {
     const inactiveRegistry = buildRegistry({
       languages: [
         {
-          ...metricsRegistry.languages[0],
+          ...metricsRegistry.languages[0]!,
           active_from: "2026-04-08",
         },
       ],
       thresholds: [
         {
-          ...metricsRegistry.thresholds[0],
+          ...metricsRegistry.thresholds[0]!,
           active_from: "2026-04-08",
         },
       ],
@@ -571,6 +571,25 @@ describe("worker runtime branch coverage", () => {
       {} as ExecutionContext,
     );
     expect(brokenEnvResponse.status).toBe(500);
+
+    const rateLimitedResponse = await app.fetch!(
+      new Request(`${TEST_BASE_URL}/api/health`) as Request<
+        unknown,
+        IncomingRequestCfProperties<unknown>
+      >,
+      {
+        ...testEnv,
+        HEALTH_RATE_LIMITER: {
+          limit: async () => ({ success: false }),
+        } as RateLimit,
+      } as WorkerEnv,
+      {} as ExecutionContext,
+    );
+    expect(rateLimitedResponse.status).toBe(429);
+    const rateLimitedBody = (await rateLimitedResponse.json()) as {
+      error: { code: string };
+    };
+    expect(rateLimitedBody.error.code).toBe("rate_limited");
   });
 
   it("covers defensive read-model branches with stub databases", async () => {

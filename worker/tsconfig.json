@@ -5,6 +5,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "noEmit": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,

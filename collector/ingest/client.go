@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/langpulse/collector/internal/cleanup"
+	"github.com/langpulse/collector/internal/errjoin"
 	"github.com/langpulse/collector/quality"
 )
 
@@ -98,7 +98,7 @@ func (c *Client) CreateRun(ctx context.Context, request quality.CreateRunRequest
 		return quality.CreatedRun{}, err
 	}
 	defer func() {
-		err = cleanup.Join(err, "close create run response body", response.Body.Close)
+		err = errjoin.Join(err, "close create run response body", response.Body.Close)
 	}()
 
 	var payload runPayload
@@ -132,7 +132,7 @@ func (c *Client) HeartbeatRun(ctx context.Context, runID string) (heartbeat qual
 		return quality.HeartbeatResult{}, err
 	}
 	defer func() {
-		err = cleanup.Join(err, "close heartbeat response body", response.Body.Close)
+		err = errjoin.Join(err, "close heartbeat response body", response.Body.Close)
 	}()
 
 	var payload runPayload
@@ -169,7 +169,7 @@ func (c *Client) UpsertRow(ctx context.Context, row quality.RowUpsert) (err erro
 		return err
 	}
 	defer func() {
-		err = cleanup.Join(err, "close upsert row response body", response.Body.Close)
+		err = errjoin.Join(err, "close upsert row response body", response.Body.Close)
 	}()
 
 	if _, err := io.Copy(io.Discard, response.Body); err != nil {
@@ -192,7 +192,7 @@ func (c *Client) FinalizeRun(ctx context.Context, request quality.FinalizeReques
 		return quality.FinalizeResult{}, err
 	}
 	defer func() {
-		err = cleanup.Join(err, "close finalize response body", response.Body.Close)
+		err = errjoin.Join(err, "close finalize response body", response.Body.Close)
 	}()
 
 	var decoded finalizePayload
@@ -247,7 +247,7 @@ func (c *Client) sendJSON(ctx context.Context, method string, path string, paylo
 	}
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return nil, cleanup.Join(decodeAPIError(response), "close ingest error response body", response.Body.Close)
+		return nil, errjoin.Join(decodeAPIError(response), "close ingest error response body", response.Body.Close)
 	}
 
 	return response, nil

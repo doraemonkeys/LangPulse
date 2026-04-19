@@ -1,4 +1,4 @@
-package cleanup
+package errjoin
 
 import (
 	"errors"

@@ -106,8 +106,8 @@ describe("public quality routes", () => {
       "2026-04-02",
       "2026-04-04",
     ]);
-    expect(body.series[0].observed_at).toBe("2026-04-02T02:00:00.000Z");
-    expect(body.series[1].published_at).toBe("2026-04-04T02:05:00.000Z");
+    expect(body.series[0]!.observed_at).toBe("2026-04-02T02:00:00.000Z");
+    expect(body.series[1]!.published_at).toBe("2026-04-04T02:05:00.000Z");
     expect(response.headers.get("Cache-Control")).toBe(
       "public, max-age=300, stale-while-revalidate=3600",
     );
@@ -140,8 +140,8 @@ describe("public quality routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.series).toHaveLength(1);
-    expect(body.series[0].observed_date).toBe("2026-04-02");
-    expect(body.series[0].thresholds).toEqual([
+    expect(body.series[0]!.observed_date).toBe("2026-04-02");
+    expect(body.series[0]!.thresholds).toEqual([
       { threshold_value: 0, count: 30 },
       { threshold_value: 10, count: 20 },
       { threshold_value: 50, count: 8 },

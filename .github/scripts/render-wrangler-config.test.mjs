@@ -99,6 +99,12 @@ describe("renderWranglerConfig", () => {
     assert.match(rendered, /\[\[env\.production\.d1_databases\]\]/);
     assert.match(rendered, /binding = "DB"/);
     assert.match(rendered, /database_id = "00000000-0000-0000-0000-000000000000"/);
+    // Cloudflare bindings are non-inheritable across envs, so the rate limiter
+    // for /api/health must be re-emitted under [[env.NAME.unsafe.bindings]].
+    assert.match(rendered, /\[\[env\.production\.unsafe\.bindings\]\]/);
+    assert.match(rendered, /name = "HEALTH_RATE_LIMITER"/);
+    assert.match(rendered, /type = "ratelimit"/);
+    assert.match(rendered, /simple = \{ limit = 30, period = 60 \}/);
     // Regression guard: the plaintext INTERNAL_API_TOKEN binding must never
     // reappear in the appended env-scoped block — the deploy workflow pushes
     // it as a Worker secret instead. The dev-only `[vars]` sentinel in the

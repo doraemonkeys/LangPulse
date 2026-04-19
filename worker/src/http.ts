@@ -2,14 +2,14 @@ export interface ErrorPayload {
   error: {
     code: string;
     message: string;
-    details?: Record<string, unknown>;
+    details: Record<string, unknown> | undefined;
   };
 }
 
 export class HttpError extends Error {
   public readonly status: number;
   public readonly code: string;
-  public readonly details?: Record<string, unknown>;
+  public readonly details: Record<string, unknown> | undefined;
 
   constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
     super(message);

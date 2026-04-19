@@ -21,6 +21,14 @@ binding = "DB"
 database_name = "langpulse-local"
 database_id = "00000000-0000-0000-0000-000000000000"
 
+# Rate limits /api/health to 30 requests/minute per IP to prevent unauthenticated
+# clients from hammering the DB via the public health probe.
+[[unsafe.bindings]]
+name = "HEALTH_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
 [env.production]
 
 [env.smoke]
