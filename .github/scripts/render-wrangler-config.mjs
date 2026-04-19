@@ -8,7 +8,7 @@ const DEFAULT_RUN_LEASE_DURATION_SECONDS = "300";
 const DEFAULT_DATABASE_BINDING = "DB";
 const ENVIRONMENT_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-// Cloudflare bindings (vars, d1, unsafe.*) are non-inheritable: anything
+// Cloudflare bindings (vars, d1, ratelimits) are non-inheritable: anything
 // declared at the top level is ignored when wrangler deploys with --env=NAME.
 // The rate limiter therefore has to be re-emitted under each env scope or
 // /api/health will throw at runtime against an undefined binding.
@@ -81,9 +81,8 @@ export function renderWranglerConfig(options) {
     "",
     ...d1DatabaseBlock,
     "",
-    `[[env.${options.environmentName}.unsafe.bindings]]`,
+    `[[env.${options.environmentName}.ratelimits]]`,
     `name = ${quoteTomlString(HEALTH_RATE_LIMITER_NAME)}`,
-    `type = "ratelimit"`,
     `namespace_id = ${quoteTomlString(HEALTH_RATE_LIMITER_NAMESPACE_ID)}`,
     `simple = { limit = ${HEALTH_RATE_LIMITER_LIMIT}, period = ${HEALTH_RATE_LIMITER_PERIOD_SECONDS} }`,
     "",

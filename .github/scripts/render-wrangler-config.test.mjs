@@ -112,10 +112,12 @@ describe("renderWranglerConfig", () => {
     assert.match(rendered, /binding = "DB"/);
     assert.match(rendered, /database_id = "00000000-0000-0000-0000-000000000000"/);
     // Cloudflare bindings are non-inheritable across envs, so the rate limiter
-    // for /api/health must be re-emitted under [[env.NAME.unsafe.bindings]].
-    assert.match(rendered, /\[\[env\.production\.unsafe\.bindings\]\]/);
+    // for /api/health must be re-emitted under [[env.NAME.ratelimits]] (the
+    // GA section that replaces the legacy `[[unsafe.bindings]]` form).
+    assert.match(rendered, /\[\[env\.production\.ratelimits\]\]/);
     assert.match(rendered, /name = "HEALTH_RATE_LIMITER"/);
-    assert.match(rendered, /type = "ratelimit"/);
+    assert.doesNotMatch(rendered, /type = "ratelimit"/);
+    assert.doesNotMatch(rendered, /\[\[env\.production\.unsafe\.bindings\]\]/);
     assert.match(rendered, /simple = \{ limit = 30, period = 60 \}/);
     // The rendered config is CI-only; the dev-only top-level [vars] block
     // (INTERNAL_API_TOKEN sentinel + RUN_LEASE_DURATION_SECONDS) must be
