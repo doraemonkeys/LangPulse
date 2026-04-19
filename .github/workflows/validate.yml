@@ -9,8 +9,11 @@ permissions:
 
 env:
   LANGPULSE_GO_MIN_COVERAGE: "90"
-  # Pin the collector linter so `make collector-lint` resolves the same binary
-  # locally and in CI. Bump in lockstep with collector/.golangci.yml's schema.
+  # Pin the collector linter so `make collector-lint` resolves the same version
+  # locally and in CI. We `go install` from source (rather than pulling a
+  # prebuilt binary) so the linter's runtime Go version tracks collector/go.mod
+  # — prebuilt releases lag behind new Go versions and trip the linter's
+  # "build Go < target Go" guard.
   LANGPULSE_GOLANGCI_LINT_VERSION: "v2.1.6"
 
 jobs:
@@ -45,8 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \
-            sh -s -- -b "$(go env GOPATH)/bin" "${LANGPULSE_GOLANGCI_LINT_VERSION}"
+          go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${LANGPULSE_GOLANGCI_LINT_VERSION}"
 
       - name: Validate Repository Contract
         shell: bash
