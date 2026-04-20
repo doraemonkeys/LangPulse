@@ -13,7 +13,7 @@ export function AppHeader({ observedDate, windowDays }: AppHeaderProps) {
         <h1 className="app-header__title">Which languages are gaining traction?</h1>
         <p className="app-header__lede">
           Public repositories pushed in the last {windowDays} days, ranked and compared across
-          star thresholds. UTC only, one published snapshot per day.
+          star thresholds. One published snapshot per day.
         </p>
       </div>
       <div className="app-header__meta">
