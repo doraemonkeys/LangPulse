@@ -60,6 +60,13 @@
       "active_to": null
     },
     {
+      "id": "c",
+      "label": "C",
+      "github_query_fragment": "language:\"c\"",
+      "active_from": "2026-04-20",
+      "active_to": null
+    },
+    {
       "id": "php",
       "label": "PHP",
       "github_query_fragment": "language:\"php\"",
