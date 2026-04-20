@@ -60,4 +60,43 @@ describe("LeaderboardRow", () => {
     );
     expect(screen.getByText("\u2014")).toBeInTheDocument();
   });
+
+  it("omits the sparkline and applies compact class when showSparkline is false", () => {
+    const { container } = render(
+      <LeaderboardRow
+        rank={11}
+        entry={baseEntry}
+        sparklinePoints={[{ date: "2026-04-10", value: 1200 }]}
+        color="currentColor"
+        pinned={false}
+        onToggle={() => {}}
+        showSparkline={false}
+      />,
+    );
+    expect(container.querySelector(".leaderboard-row__sparkline")).toBeNull();
+    expect(container.querySelector(".leaderboard-row--compact")).not.toBeNull();
+  });
+
+  it("ignores click and keyboard activation when disabled", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    render(
+      <LeaderboardRow
+        rank={3}
+        entry={baseEntry}
+        sparklinePoints={[]}
+        color="#E69F00"
+        pinned={false}
+        onToggle={onToggle}
+        disabled
+      />,
+    );
+    const row = screen.getByRole("button");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(row).toHaveAttribute("title", "20 max pinned");
+    await user.click(row);
+    row.focus();
+    await user.keyboard("{Enter}");
+    expect(onToggle).not.toHaveBeenCalled();
+  });
 });

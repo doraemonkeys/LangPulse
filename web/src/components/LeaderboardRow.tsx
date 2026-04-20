@@ -15,6 +15,8 @@ interface LeaderboardRowProps {
   color: string;
   pinned: boolean;
   onToggle: (languageId: string) => void;
+  showSparkline?: boolean;
+  disabled?: boolean;
 }
 
 function handleKeyToggle(
@@ -35,20 +37,39 @@ export function LeaderboardRow({
   color,
   pinned,
   onToggle,
+  showSparkline = true,
+  disabled = false,
 }: LeaderboardRowProps) {
   const delta = computeDelta(entry.count, entry.previous_count);
   const countText = formatFullCount(entry.count);
   const ariaLabel = `${formatRank(rank)}. ${entry.label}, ${countText} repositories, delta ${delta.label}. Press Enter to toggle on chart.`;
 
+  function handleClick(): void {
+    if (disabled) return;
+    onToggle(entry.id);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if (disabled) return;
+    handleKeyToggle(event, entry.id, onToggle);
+  }
+
   return (
     <div
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       aria-pressed={pinned}
+      aria-disabled={disabled || undefined}
       aria-label={ariaLabel}
-      className={clsx("leaderboard-row", pinned && "leaderboard-row--pinned")}
-      onClick={() => onToggle(entry.id)}
-      onKeyDown={(event) => handleKeyToggle(event, entry.id, onToggle)}
+      title={disabled ? "20 max pinned" : undefined}
+      className={clsx(
+        "leaderboard-row",
+        !showSparkline && "leaderboard-row--compact",
+        pinned && "leaderboard-row--pinned",
+        disabled && "leaderboard-row--disabled",
+      )}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
     >
       <span className="leaderboard-row__rank">{formatRank(rank)}</span>
       <span
@@ -61,13 +82,15 @@ export function LeaderboardRow({
       <span className={clsx("leaderboard-row__delta", `leaderboard-row__delta--${delta.sign}`)}>
         {delta.label}
       </span>
-      <span className="leaderboard-row__sparkline">
-        <Sparkline
-          points={sparklinePoints}
-          color={color}
-          ariaLabel={`${entry.label} 60-day trend`}
-        />
-      </span>
+      {showSparkline ? (
+        <span className="leaderboard-row__sparkline">
+          <Sparkline
+            points={sparklinePoints}
+            color={color}
+            ariaLabel={`${entry.label} 60-day trend`}
+          />
+        </span>
+      ) : null}
     </div>
   );
 }

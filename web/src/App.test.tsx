@@ -115,4 +115,18 @@ describe("App", () => {
     expect(goRow).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /Reset to top 10/ })).toBeInTheDocument();
   });
+
+  it("pins a language selected from the language picker via typeahead + Enter", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByText("Rust");
+
+    const combobox = screen.getByRole("combobox");
+    await user.click(combobox);
+    await user.type(combobox, "rust");
+    await user.keyboard("{Enter}");
+
+    const rustRow = screen.getByRole("button", { name: /Rust, 902 repositories/ });
+    expect(rustRow).toHaveAttribute("aria-pressed", "true");
+  });
 });

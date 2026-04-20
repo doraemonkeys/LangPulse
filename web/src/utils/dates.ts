@@ -67,3 +67,14 @@ export function formatShortDate(date: string): string {
   const day = parsed.getUTCDate();
   return `${month} ${day}`;
 }
+
+export interface ActivationWindow {
+  active_from: string;
+  active_to: string | null;
+}
+
+export function isActiveOn(window: ActivationWindow, observedDate: string | null): boolean {
+  if (observedDate === null) return window.active_to === null;
+  if (window.active_from > observedDate) return false;
+  return window.active_to === null || window.active_to >= observedDate;
+}

@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import clsx from "clsx";
 import type { PublicThreshold } from "../api/types";
+import { isActiveOn } from "../utils/dates";
 import { formatThresholdLabel } from "../utils/format";
 
 interface ThresholdChipsProps {
@@ -8,12 +9,6 @@ interface ThresholdChipsProps {
   activeThreshold: number;
   observedDate: string | null;
   onChange: (threshold: number) => void;
-}
-
-function isActiveOn(threshold: PublicThreshold, observedDate: string | null): boolean {
-  if (observedDate === null) return threshold.active_to === null;
-  if (threshold.active_from > observedDate) return false;
-  return threshold.active_to === null || threshold.active_to >= observedDate;
 }
 
 export function ThresholdChips({

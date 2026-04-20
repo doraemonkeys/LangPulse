@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { LanguagePicker } from "./LanguagePicker";
 import { LeaderboardRow } from "./LeaderboardRow";
 import { StateBanner } from "./StateBanner";
-import type { CompareResponse, SnapshotResponse } from "../api/types";
+import type { CompareResponse, PublicLanguage, SnapshotResponse } from "../api/types";
 import { getPaletteForIds, type ThemeMode } from "../charts/palette";
+import { MAX_PINNED_LANGUAGES } from "../state/actions";
 
 export const LEADERBOARD_SIZE = 10;
 
@@ -15,6 +17,8 @@ interface LeaderboardProps {
   pinnedLanguages: ReadonlySet<string>;
   onTogglePin: (languageId: string) => void;
   onResetPins: () => void;
+  registryLanguages: PublicLanguage[];
+  observedDate: string | null;
 }
 
 interface SparklinePoint {
@@ -34,17 +38,34 @@ function buildSparklineSeries(
 }
 
 export function Leaderboard(props: LeaderboardProps) {
-  const { snapshot, isLoading, error, sparklineData, theme, pinnedLanguages, onTogglePin, onResetPins } = props;
+  const {
+    snapshot,
+    isLoading,
+    error,
+    sparklineData,
+    theme,
+    pinnedLanguages,
+    onTogglePin,
+    onResetPins,
+    registryLanguages,
+    observedDate,
+  } = props;
+  const [expanded, setExpanded] = useState(false);
 
-  const topLanguages = useMemo(() => {
+  const sortedLanguages = useMemo(() => {
     if (snapshot === undefined) return [];
-    return [...snapshot.languages].sort((a, b) => b.count - a.count).slice(0, LEADERBOARD_SIZE);
+    return [...snapshot.languages].sort((a, b) => b.count - a.count);
   }, [snapshot]);
+
+  const topLanguages = sortedLanguages.slice(0, LEADERBOARD_SIZE);
+  const tailLanguages = sortedLanguages.slice(LEADERBOARD_SIZE);
 
   const palette = useMemo(
     () => getPaletteForIds(topLanguages.map((language) => language.id), theme),
     [topLanguages, theme],
   );
+
+  const atCap = pinnedLanguages.size >= MAX_PINNED_LANGUAGES;
 
   if (error !== null) {
     return (
@@ -60,7 +81,7 @@ export function Leaderboard(props: LeaderboardProps) {
     return <LeaderboardSkeleton />;
   }
 
-  if (topLanguages.length === 0) {
+  if (sortedLanguages.length === 0) {
     return (
       <StateBanner
         tone="info"
@@ -70,10 +91,23 @@ export function Leaderboard(props: LeaderboardProps) {
     );
   }
 
+  const totalLanguages = sortedLanguages.length;
+  const hasTail = tailLanguages.length > 0;
+
   return (
     <section className="leaderboard" aria-label="Top languages">
       <header className="leaderboard__header">
-        <h2>Top {topLanguages.length} by repositories</h2>
+        <div className="leaderboard__title">
+          <h2>Top {topLanguages.length} by repositories</h2>
+          <LanguagePicker
+            languages={registryLanguages}
+            snapshotEntries={snapshot.languages}
+            observedDate={observedDate}
+            pinnedLanguages={pinnedLanguages}
+            maxPinned={MAX_PINNED_LANGUAGES}
+            onTogglePin={onTogglePin}
+          />
+        </div>
         {pinnedLanguages.size > 0 ? (
           <button type="button" className="ghost-button" onClick={onResetPins}>
             Reset to top {LEADERBOARD_SIZE}
@@ -93,11 +127,43 @@ export function Leaderboard(props: LeaderboardProps) {
                 color={color}
                 pinned={pinned}
                 onToggle={onTogglePin}
+                disabled={atCap && !pinned}
               />
             </div>
           );
         })}
+        {expanded ? (
+          <div className="leaderboard__rows leaderboard__rows--more" role="list">
+            {tailLanguages.map((entry, index) => {
+              const pinned = pinnedLanguages.has(entry.id);
+              return (
+                <div role="listitem" key={entry.id}>
+                  <LeaderboardRow
+                    rank={LEADERBOARD_SIZE + index + 1}
+                    entry={entry}
+                    sparklinePoints={[]}
+                    color="var(--ink-muted)"
+                    pinned={pinned}
+                    onToggle={onTogglePin}
+                    showSparkline={false}
+                    disabled={atCap && !pinned}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
+      {hasTail ? (
+        <button
+          type="button"
+          className="leaderboard__show-more"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Show less" : `Show all ${totalLanguages} languages`}
+        </button>
+      ) : null}
     </section>
   );
 }

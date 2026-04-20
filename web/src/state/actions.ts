@@ -63,6 +63,10 @@ export function dashboardReducer(state: DashboardState, action: DashboardAction)
 
 export const DEFAULT_THRESHOLD = 2;
 
+// Mirrors the worker's MAX_COMPARE_LANGUAGES cap in worker/src/constants.ts so
+// UI-gated pinning never produces a compare request the server will reject.
+export const MAX_PINNED_LANGUAGES = 20;
+
 export function createInitialState(theme: ThemeMode): DashboardState {
   return {
     threshold: DEFAULT_THRESHOLD,

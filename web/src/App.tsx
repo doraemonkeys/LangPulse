@@ -9,6 +9,7 @@ import { useCompare } from "./hooks/useCompare";
 import { useLatest } from "./hooks/useLatest";
 import { useMetadata } from "./hooks/useMetadata";
 import { useSnapshot } from "./hooks/useSnapshot";
+import { MAX_PINNED_LANGUAGES } from "./state/actions";
 import { useDashboard } from "./state/DashboardProvider";
 import { addDaysUtc, computePresetRange, SPARKLINE_RANGE_DAYS } from "./utils/dates";
 
@@ -72,7 +73,13 @@ export function App() {
     to: sparklineTo,
   });
 
-  const pinnedIds = useMemo(() => Array.from(state.pinnedLanguages), [state.pinnedLanguages]);
+  // Defensive cap: worker rejects > MAX_COMPARE_LANGUAGES. UI already gates pins
+  // at MAX_PINNED_LANGUAGES, but slicing here makes out-of-band state (e.g. a
+  // preload from URL, a test) degrade gracefully instead of 400'ing the server.
+  const pinnedIds = useMemo(
+    () => Array.from(state.pinnedLanguages).slice(0, MAX_PINNED_LANGUAGES),
+    [state.pinnedLanguages],
+  );
   const chartLanguages = pinnedIds.length > 0 ? pinnedIds : topTenIds;
 
   const chartQuery = useCompare({
@@ -128,6 +135,8 @@ export function App() {
         pinnedLanguages={state.pinnedLanguages}
         onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
         onResetPins={() => dispatch({ type: "reset_pins" })}
+        registryLanguages={metadataQuery.data?.languages ?? []}
+        observedDate={latestObservedDate}
       />
 
       <ComparisonChart
