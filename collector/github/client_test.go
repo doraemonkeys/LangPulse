@@ -28,7 +28,7 @@ func TestNewClientRequiresToken(t *testing.T) {
 }
 
 func TestCountRepositoriesUsesEscapedQueryAndHeaders(t *testing.T) {
-	query := "language:protocol buffers is:public fork:true"
+	query := "language:protocol buffers is:public"
 	var rawQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

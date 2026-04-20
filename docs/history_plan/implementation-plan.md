@@ -18,7 +18,7 @@ Global rules:
 
 - Timezone: `UTC`
 - Window size: `30` days
-- Public repository qualifier: `is:public fork:true` and this intentionally includes public forks
+- Public repository qualifier: `is:public` and this excludes forks (GitHub Search default)
 - Threshold `0` omits the `stars` qualifier
 - `latest` always means latest published snapshot
 - Public read APIs never expose unpublished, failed, or expired attempts
@@ -153,7 +153,7 @@ Collect `quality_30d_snapshot` once per UTC day from `launch_date` forward.
 **Query shape**
 
 ```text
-{github_query_fragment} is:public fork:true pushed:>={from} stars:>={threshold}
+{github_query_fragment} is:public pushed:>={from} stars:>={threshold}
 ```
 
 - `from = observed_date - 29 days`

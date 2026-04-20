@@ -4,7 +4,7 @@
 
 - Production hosting is Cloudflare-only. The deployed Worker serves both the public API and the frontend static assets from one origin.
 - The frontend uses same-origin `/api/*` calls in production. CI builds the web bundle before deploying the Worker so the deployed asset graph and API routes remain coupled.
-- `github_query_fragment` is the full GitHub search fragment owned by configuration. Collector code appends shared qualifiers such as `is:public`, `fork:true`, `pushed`, and `stars`, but it does not synthesize the language qualifier.
+- `github_query_fragment` is the full GitHub search fragment owned by configuration. Collector code appends shared qualifiers such as `is:public`, `pushed`, and `stars`, but it does not synthesize the language qualifier.
 - `metrics.json` strings are canonical configuration, not user input. Leading or trailing whitespace is invalid and must be rejected instead of trimmed.
 - `language.id` remains a stable slug and `active_from` must not precede `launch_date` for either languages or thresholds.
 - Repository-wide validation is expressed through root-level `make` targets. `make ci` remains the local full-contract entry point, while GitHub `Validate` splits the `sloc-guard` policy into its dedicated action job and runs the remaining checks through `make ci-core`.

@@ -13,7 +13,6 @@ func BuildSearchQuery(windowDays int, language Language, threshold Threshold, ob
 	parts := []string{
 		language.GitHubQueryFragment,
 		"is:public",
-		"fork:true",
 		fmt.Sprintf("pushed:>=%s", from),
 	}
 

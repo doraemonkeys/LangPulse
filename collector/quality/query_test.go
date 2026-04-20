@@ -10,7 +10,7 @@ func TestBuildSearchQueryOmitsStarsForZeroThreshold(t *testing.T) {
 		mustParseDay(t, "2026-04-07"),
 	)
 
-	want := `language:"go" is:public fork:true pushed:>=2026-03-09`
+	want := `language:"go" is:public pushed:>=2026-03-09`
 	if query != want {
 		t.Fatalf("BuildSearchQuery() = %q, want %q", query, want)
 	}
@@ -24,7 +24,7 @@ func TestBuildSearchQueryIncludesStarsQualifier(t *testing.T) {
 		mustParseDay(t, "2026-04-07"),
 	)
 
-	want := `language:"Protocol Buffers" is:public fork:true pushed:>=2026-03-09 stars:>=10`
+	want := `language:"Protocol Buffers" is:public pushed:>=2026-03-09 stars:>=10`
 	if query != want {
 		t.Fatalf("BuildSearchQuery() = %q, want %q", query, want)
 	}
@@ -38,7 +38,7 @@ func TestBuildSearchQueryPreservesConfiguredQueryFragments(t *testing.T) {
 		mustParseDay(t, "2026-04-07"),
 	)
 
-	want := `language:"Visual Basic .NET" is:public fork:true pushed:>=2026-03-09 stars:>=100`
+	want := `language:"Visual Basic .NET" is:public pushed:>=2026-03-09 stars:>=100`
 	if query != want {
 		t.Fatalf("BuildSearchQuery() = %q, want %q", query, want)
 	}
@@ -52,7 +52,7 @@ func TestBuildSearchQueryPreservesSpecialCharacterFragments(t *testing.T) {
 		mustParseDay(t, "2026-04-07"),
 	)
 
-	want := `language:"c#" is:public fork:true pushed:>=2026-03-09`
+	want := `language:"c#" is:public pushed:>=2026-03-09`
 	if query != want {
 		t.Fatalf("BuildSearchQuery() = %q, want %q", query, want)
 	}
