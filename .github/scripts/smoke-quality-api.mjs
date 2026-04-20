@@ -60,18 +60,17 @@ async function runPublicSmoke(publicBaseUrl) {
     );
   }
 
-  const qualityUrl = new URL("/api/quality", ensureTrailingSlash(publicBaseUrl));
-  qualityUrl.searchParams.set("language", languageId);
-  qualityUrl.searchParams.set("from", observedDate);
-  qualityUrl.searchParams.set("to", observedDate);
+  const snapshotUrl = new URL("/api/quality/snapshot", ensureTrailingSlash(publicBaseUrl));
+  snapshotUrl.searchParams.set("date", observedDate);
+  snapshotUrl.searchParams.set("threshold", `${thresholdValue}`);
 
-  const quality = await requestJsonOrText(qualityUrl, {
+  const snapshot = await requestJsonOrText(snapshotUrl, {
     headers: { Accept: "application/json, text/plain;q=0.9" },
   });
 
-  assertPublishedSlice(quality.body);
+  assertSnapshotSlice(snapshot.body, { observedDate, thresholdValue, languageId });
   console.log(
-    `Public smoke check passed for ${languageId} on ${observedDate} via ${publicBaseUrl}`,
+    `Public smoke check passed for ${languageId}@${thresholdValue} on ${observedDate} via ${publicBaseUrl}`,
   );
 }
 
@@ -197,14 +196,13 @@ async function runLifecycleSmoke(options) {
     );
   }
 
-  const qualityUrl = new URL("/api/quality", ensureTrailingSlash(options.baseUrl));
-  qualityUrl.searchParams.set("language", languageId);
-  qualityUrl.searchParams.set("from", observedDate);
-  qualityUrl.searchParams.set("to", observedDate);
-  const quality = await requestJsonOrText(qualityUrl, {
+  const snapshotUrl = new URL("/api/quality/snapshot", ensureTrailingSlash(options.baseUrl));
+  snapshotUrl.searchParams.set("date", observedDate);
+  snapshotUrl.searchParams.set("threshold", `${thresholdValue}`);
+  const snapshot = await requestJsonOrText(snapshotUrl, {
     headers: { Accept: "application/json, text/plain;q=0.9" },
   });
-  assertPublishedSlice(quality.body);
+  assertSnapshotSlice(snapshot.body, { observedDate, thresholdValue, languageId });
 
   const rejectStatuses = parseStatusSet(
     process.env.LANGPULSE_SMOKE_REJECT_STATUSES ?? "409,422",
@@ -385,48 +383,34 @@ function parseBody(bodyText) {
   }
 }
 
-function assertPublishedSlice(body) {
-  const rows = collectCandidateRows(body);
-  if (rows.length === 0) {
-    throw new Error(`Expected at least one published quality row, received: ${JSON.stringify(body)}`);
+function assertSnapshotSlice(body, { observedDate, thresholdValue, languageId }) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error(`Expected snapshot body object, received: ${JSON.stringify(body)}`);
   }
-
-  const hasPublishedTimestamps = rows.some(
-    (row) =>
-      typeof row === "object" &&
-      row !== null &&
-      (hasKey(row, "observed_at") || hasKey(row, "observedAt")) &&
-      (hasKey(row, "published_at") || hasKey(row, "publishedAt")),
-  );
-
-  if (!hasPublishedTimestamps) {
+  if (body.observed_date !== observedDate) {
     throw new Error(
-      `Expected observed_at/published_at fields in quality response rows: ${JSON.stringify(body)}`,
+      `Expected snapshot observed_date ${observedDate}, received ${body.observed_date ?? "none"}`,
     );
   }
-}
-
-function collectCandidateRows(value) {
-  if (Array.isArray(value)) {
-    return value;
+  if (body.threshold !== thresholdValue) {
+    throw new Error(
+      `Expected snapshot threshold ${thresholdValue}, received ${body.threshold ?? "none"}`,
+    );
   }
-
-  if (value && typeof value === "object") {
-    for (const key of ["rows", "data", "items", "results", "snapshots"]) {
-      if (Array.isArray(value[key])) {
-        return value[key];
-      }
-    }
-
-    const nestedArrays = Object.values(value)
-      .filter(Array.isArray)
-      .flat();
-    if (nestedArrays.length > 0) {
-      return nestedArrays;
-    }
+  if (!Array.isArray(body.languages) || body.languages.length === 0) {
+    throw new Error(`Expected non-empty languages array in snapshot: ${JSON.stringify(body)}`);
   }
-
-  return [];
+  const entry = body.languages.find((language) => language?.id === languageId);
+  if (!entry) {
+    throw new Error(
+      `Expected language ${languageId} in snapshot languages: ${JSON.stringify(body.languages)}`,
+    );
+  }
+  if (!Number.isInteger(entry.count) || entry.count < 0) {
+    throw new Error(
+      `Expected non-negative integer count for ${languageId}, received ${JSON.stringify(entry)}`,
+    );
+  }
 }
 
 function extractDate(value) {
@@ -512,10 +496,6 @@ function extractByKeys(value, keys, projector) {
   }
 
   return null;
-}
-
-function hasKey(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
 function ensureTrailingSlash(value) {
