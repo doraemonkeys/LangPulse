@@ -2,6 +2,7 @@ export const QUALITY_METRIC = "quality_30d_snapshot";
 export const UTC_TIMEZONE = "UTC";
 export const WINDOW_DAYS = 30;
 export const MAX_PUBLIC_RANGE_DAYS = 365;
+export const MAX_COMPARE_LANGUAGES = 20;
 export const DEFAULT_RUN_LEASE_DURATION_SECONDS = 300;
 export const INTERNAL_AUTH_SCHEME = "Bearer";
 export const QUALITY_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";

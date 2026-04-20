@@ -1,15 +1,13 @@
-import { findLanguageById } from "./config-registry";
+import { findLanguageById, isEntryActiveOnDate } from "./config-registry";
 import { HttpError } from "./http";
-import type { QualitySeriesPoint, RequestContext } from "./types";
-
-interface QualitySeriesRow {
-  observed_date: string;
-  run_id: string;
-  observed_at: string;
-  published_at: string;
-  threshold_value: number;
-  count: number;
-}
+import type {
+  CompareLanguageEntry,
+  CompareSeriesPoint,
+  QualityCompareResponse,
+  QualitySnapshotResponse,
+  RequestContext,
+  SnapshotLanguageCount,
+} from "./types";
 
 export async function readLatestPublishedObservedDate(
   context: RequestContext,
@@ -26,76 +24,174 @@ export async function readLatestPublishedObservedDate(
   return row?.observed_date ?? null;
 }
 
-export async function readPublishedQualitySeries(
+interface SnapshotRow {
+  observed_date: string;
+  language_id: string;
+  count: number;
+}
+
+async function readPreviousObservedDate(
   context: RequestContext,
-  languageId: string,
-  from: string,
-  to: string,
-): Promise<{ language: { id: string; label: string }; series: QualitySeriesPoint[] }> {
-  const language = findLanguageById(context.runtime.registry, languageId);
-  if (language === undefined) {
-    throw new HttpError(400, "unknown_language", "language must be a known language.id.", {
-      language: languageId,
-    });
+  observedDate: string,
+): Promise<string | null> {
+  const row = await context.env.DB
+    .prepare(
+      `SELECT MAX(observed_date) AS observed_date
+      FROM quality_30d_publications
+      WHERE observed_date < ?1`,
+    )
+    .bind(observedDate)
+    .first<{ observed_date: string | null }>();
+
+  return row?.observed_date ?? null;
+}
+
+async function readPublicationExists(
+  context: RequestContext,
+  observedDate: string,
+): Promise<boolean> {
+  const row = await context.env.DB
+    .prepare(
+      `SELECT 1 AS present
+      FROM quality_30d_publications
+      WHERE observed_date = ?1`,
+    )
+    .bind(observedDate)
+    .first<{ present: number }>();
+
+  return row !== null;
+}
+
+export async function readPublishedQualitySnapshot(
+  context: RequestContext,
+  observedDate: string,
+  thresholdValue: number,
+): Promise<QualitySnapshotResponse | null> {
+  if (!(await readPublicationExists(context, observedDate))) {
+    return null;
   }
+
+  const previousDate = await readPreviousObservedDate(context, observedDate);
+  const dates = previousDate === null ? [observedDate] : [observedDate, previousDate];
+  const placeholders = dates.map((_, index) => `?${index + 2}`).join(", ");
 
   const queryResult = await context.env.DB
     .prepare(
-      `SELECT
-        publications.observed_date,
-        publications.run_id,
-        runs.observed_at,
-        publications.published_at,
-        rows.threshold_value,
-        rows.count
+      `SELECT publications.observed_date, rows.language_id, rows.count
       FROM quality_30d_publications AS publications
-      INNER JOIN quality_30d_runs AS runs
-        ON runs.run_id = publications.run_id
       INNER JOIN quality_30d_run_rows AS rows
         ON rows.run_id = publications.run_id
-      WHERE rows.language_id = ?1
-        AND publications.observed_date >= ?2
-        AND publications.observed_date <= ?3
-      ORDER BY publications.observed_date ASC, rows.threshold_value ASC`,
+      WHERE rows.threshold_value = ?1
+        AND publications.observed_date IN (${placeholders})`,
     )
-    .bind(languageId, from, to)
-    .all<QualitySeriesRow>();
+    .bind(thresholdValue, ...dates)
+    .all<SnapshotRow>();
 
-  const groupedSeries: QualitySeriesPoint[] = [];
-  let currentPoint: QualitySeriesPoint | null = null;
-  let currentRunId: string | null = null;
-
+  const currentCounts = new Map<string, number>();
+  const previousCounts = new Map<string, number>();
   for (const row of queryResult.results ?? []) {
-    if (currentPoint === null || currentPoint.observed_date !== row.observed_date) {
-      currentPoint = {
-        observed_date: row.observed_date,
-        observed_at: row.observed_at,
-        published_at: row.published_at,
-        thresholds: [],
-      };
-      groupedSeries.push(currentPoint);
-      currentRunId = row.run_id;
-    } else if (currentRunId !== row.run_id) {
-      throw new HttpError(
-        500,
-        "published_slice_run_mismatch",
-        "Each published observed_date must resolve to exactly one run_id.",
-        { observed_date: row.observed_date },
-      );
+    if (row.observed_date === observedDate) {
+      currentCounts.set(row.language_id, row.count);
+    } else if (previousDate !== null && row.observed_date === previousDate) {
+      previousCounts.set(row.language_id, row.count);
+    }
+  }
+
+  const languages: SnapshotLanguageCount[] = [];
+  for (const language of context.runtime.registry.languages) {
+    if (!isEntryActiveOnDate(observedDate, language.active_from, language.active_to)) {
+      continue;
     }
 
-    currentPoint.thresholds.push({
-      threshold_value: row.threshold_value,
-      count: row.count,
+    const count = currentCounts.get(language.id);
+    if (count === undefined) {
+      continue;
+    }
+
+    const previousCount =
+      previousDate === null ? null : (previousCounts.get(language.id) ?? null);
+
+    languages.push({
+      id: language.id,
+      label: language.label,
+      count,
+      previous_count: previousCount,
     });
   }
 
   return {
-    language: {
-      id: language.id,
-      label: language.label,
-    },
-    series: groupedSeries,
+    observed_date: observedDate,
+    threshold: thresholdValue,
+    previous_date: previousDate,
+    languages,
+  };
+}
+
+interface CompareRow {
+  observed_date: string;
+  language_id: string;
+  count: number;
+}
+
+export async function readPublishedQualityCompare(
+  context: RequestContext,
+  languageIds: string[],
+  thresholdValue: number,
+  from: string,
+  to: string,
+): Promise<QualityCompareResponse> {
+  const resolvedLanguages: CompareLanguageEntry[] = [];
+  for (const languageId of languageIds) {
+    const language = findLanguageById(context.runtime.registry, languageId);
+    if (language === undefined) {
+      throw new HttpError(400, "unknown_language", "language must be a known language.id.", {
+        language: languageId,
+      });
+    }
+
+    resolvedLanguages.push({ id: language.id, label: language.label });
+  }
+
+  const languagePlaceholders = languageIds.map((_, index) => `?${index + 2}`).join(", ");
+  const fromIndex = languageIds.length + 2;
+  const toIndex = languageIds.length + 3;
+
+  const queryResult = await context.env.DB
+    .prepare(
+      `SELECT publications.observed_date, rows.language_id, rows.count
+      FROM quality_30d_publications AS publications
+      INNER JOIN quality_30d_run_rows AS rows
+        ON rows.run_id = publications.run_id
+      WHERE rows.threshold_value = ?1
+        AND rows.language_id IN (${languagePlaceholders})
+        AND publications.observed_date >= ?${fromIndex}
+        AND publications.observed_date <= ?${toIndex}
+      ORDER BY publications.observed_date ASC`,
+    )
+    .bind(thresholdValue, ...languageIds, from, to)
+    .all<CompareRow>();
+
+  const pointsByDate = new Map<string, CompareSeriesPoint>();
+  for (const row of queryResult.results ?? []) {
+    let point = pointsByDate.get(row.observed_date);
+    if (point === undefined) {
+      point = { observed_date: row.observed_date, counts: {} };
+      pointsByDate.set(row.observed_date, point);
+    }
+
+    point.counts[row.language_id] = row.count;
+  }
+
+  const series = Array.from(pointsByDate.values()).sort((a, b) =>
+    a.observed_date.localeCompare(b.observed_date),
+  );
+
+  return {
+    threshold: thresholdValue,
+    from,
+    to,
+    languages: resolvedLanguages,
+    series,
   };
 }
 

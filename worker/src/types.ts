@@ -108,14 +108,34 @@ export interface FinalizeQualityRunRequest {
   error_summary?: string | null;
 }
 
-export interface ThresholdPoint {
-  threshold_value: number;
+export interface SnapshotLanguageCount {
+  id: string;
+  label: string;
   count: number;
+  previous_count: number | null;
 }
 
-export interface QualitySeriesPoint {
+export interface QualitySnapshotResponse {
   observed_date: string;
-  observed_at: string;
-  published_at: string;
-  thresholds: ThresholdPoint[];
+  threshold: number;
+  previous_date: string | null;
+  languages: SnapshotLanguageCount[];
+}
+
+export interface CompareLanguageEntry {
+  id: string;
+  label: string;
+}
+
+export interface CompareSeriesPoint {
+  observed_date: string;
+  counts: Record<string, number>;
+}
+
+export interface QualityCompareResponse {
+  threshold: number;
+  from: string;
+  to: string;
+  languages: CompareLanguageEntry[];
+  series: CompareSeriesPoint[];
 }

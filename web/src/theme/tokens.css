@@ -1,0 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root {
+  --bg: #f4efe6;
+  --bg-elev: #fffaf2;
+  --panel: rgba(255, 251, 245, 0.88);
+  --ink: #16202a;
+  --ink-muted: #4a5b68;
+  --border: rgba(22, 32, 42, 0.12);
+  --accent: #9b2226;
+  --accent-soft: #ff6b35;
+  --positive: #0f7a3a;
+  --negative: #b4351c;
+  --chip-bg: rgba(22, 32, 42, 0.06);
+  --chip-bg-active: var(--accent);
+  --chip-fg-active: #fffaf2;
+  --grid-line: rgba(22, 32, 42, 0.08);
+  --shadow: 0 24px 80px rgba(22, 32, 42, 0.08);
+  --radius-card: 20px;
+  --radius-chip: 999px;
+  --font-display: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #141a22;
+  --bg-elev: #1c232d;
+  --panel: rgba(28, 35, 45, 0.88);
+  --ink: #e8e3d7;
+  --ink-muted: #9aa4b0;
+  --border: rgba(232, 227, 215, 0.12);
+  --accent: #ff8a5c;
+  --accent-soft: #ff6b35;
+  --positive: #4ec27a;
+  --negative: #ff7a5c;
+  --chip-bg: rgba(232, 227, 215, 0.08);
+  --chip-bg-active: var(--accent);
+  --chip-fg-active: #141a22;
+  --grid-line: rgba(232, 227, 215, 0.08);
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}

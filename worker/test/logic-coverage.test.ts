@@ -17,7 +17,6 @@ import { createWorker } from "../src/index";
 import {
   checkDatabaseHealth,
   readLatestPublishedObservedDate,
-  readPublishedQualitySeries,
 } from "../src/public-quality";
 import { finalizeQualityRun, heartbeatQualityRun, upsertQualityRunRow, validatePublicDateRange, createQualityRun } from "../src/quality-runs";
 import {
@@ -338,11 +337,11 @@ describe("supporting logic coverage", () => {
     const wrongMethod = await dispatch(harness.app, makePublicRequest("/internal/quality-runs"));
     expect(wrongMethod.status).toBe(405);
 
-    const missingQueryParameter = await dispatch(
+    const missingCompareParameters = await dispatch(
       harness.app,
-      makePublicRequest("/api/quality?language=go&from=2026-04-01"),
+      makePublicRequest("/api/quality/compare?languages=go&threshold=2"),
     );
-    expect(missingQueryParameter.status).toBe(400);
+    expect(missingCompareParameters.status).toBe(400);
 
     const invalidPathSegment = await dispatch(
       harness.app,
@@ -527,13 +526,22 @@ describe("worker runtime branch coverage", () => {
     );
     expect(latestWrongMethod.status).toBe(405);
 
-    const qualityWrongMethod = await dispatch(
+    const snapshotWrongMethod = await dispatch(
       app,
-      new Request(`${TEST_BASE_URL}/api/quality?language=go&from=2026-04-01&to=2026-04-02`, {
+      new Request(`${TEST_BASE_URL}/api/quality/snapshot?date=2026-04-02&threshold=2`, {
         method: "POST",
       }),
     );
-    expect(qualityWrongMethod.status).toBe(405);
+    expect(snapshotWrongMethod.status).toBe(405);
+
+    const compareWrongMethod = await dispatch(
+      app,
+      new Request(
+        `${TEST_BASE_URL}/api/quality/compare?languages=go&threshold=2&from=2026-04-01&to=2026-04-02`,
+        { method: "POST" },
+      ),
+    );
+    expect(compareWrongMethod.status).toBe(405);
 
     const healthWrongMethod = await dispatch(
       app,
@@ -593,61 +601,6 @@ describe("worker runtime branch coverage", () => {
   });
 
   it("covers defensive read-model branches with stub databases", async () => {
-    const mismatchedContext = {
-      env: {
-        DB: {
-          prepare() {
-            return {
-              bind() {
-                return {
-                  all: async () => ({
-                    results: [
-                      {
-                        observed_date: "2026-04-07",
-                        run_id: "run-a",
-                        observed_at: TEST_NOW,
-                        published_at: TEST_NOW,
-                        threshold_value: 0,
-                        count: 1,
-                      },
-                      {
-                        observed_date: "2026-04-07",
-                        run_id: "run-b",
-                        observed_at: TEST_NOW,
-                        published_at: TEST_NOW,
-                        threshold_value: 10,
-                        count: 1,
-                      },
-                    ],
-                  }),
-                };
-              },
-            };
-          },
-        },
-      } as unknown as WorkerEnv,
-      runtime: createContext().runtime,
-    } satisfies RequestContext;
-
-    await expect(
-      readPublishedQualitySeries(mismatchedContext, "go", "2026-04-01", "2026-04-07"),
-    ).rejects.toMatchObject({ code: "published_slice_run_mismatch" });
-
-    const unknownLanguageContext = {
-      ...createContext(),
-      env: {
-        DB: {
-          prepare() {
-            throw new Error("should not execute");
-          },
-        },
-      } as unknown as WorkerEnv,
-    } satisfies RequestContext;
-
-    await expect(
-      readPublishedQualitySeries(unknownLanguageContext, "unknown-language", "2026-04-01", "2026-04-07"),
-    ).rejects.toMatchObject({ code: "unknown_language" });
-
     const unhealthyContext = {
       ...createContext(),
       env: {

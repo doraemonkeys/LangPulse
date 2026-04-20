@@ -1,0 +1,25 @@
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { DashboardProvider } from "../state/DashboardProvider";
+import { AppHeader } from "./AppHeader";
+
+describe("AppHeader", () => {
+  it("renders the observed date pill and window-day copy", () => {
+    render(
+      <DashboardProvider>
+        <AppHeader observedDate="2026-04-10" windowDays={30} />
+      </DashboardProvider>,
+    );
+    expect(screen.getByText("2026-04-10")).toBeInTheDocument();
+    expect(screen.getByText(/30 days/)).toBeInTheDocument();
+  });
+
+  it("falls back to em-dash when observed_date is null", () => {
+    render(
+      <DashboardProvider>
+        <AppHeader observedDate={null} windowDays={30} />
+      </DashboardProvider>,
+    );
+    expect(screen.getByLabelText("Latest observed UTC date").textContent).toContain("\u2014");
+  });
+});

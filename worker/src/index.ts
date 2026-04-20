@@ -7,7 +7,9 @@ import { handleQualityRunsFinalize } from "./routes/internal/quality-runs-finali
 import { handleQualityRunsHeartbeat } from "./routes/internal/quality-runs-heartbeat";
 import { handleQualityRunsRowUpsert } from "./routes/internal/quality-runs-row-upsert";
 import { handleMetadata } from "./routes/metadata";
-import { handleQualityLatest, handleQualityRange } from "./routes/quality";
+import { handleQualityLatest } from "./routes/quality";
+import { handleQualityCompare } from "./routes/quality-compare";
+import { handleQualitySnapshot } from "./routes/quality-snapshot";
 import { parseLeaseDurationSeconds } from "./time";
 import type { RequestContext, RuntimeDependencies, WorkerEnv } from "./types";
 
@@ -130,17 +132,30 @@ function maybeHandleQualityLatest(
   return handleQualityLatest(context);
 }
 
-function maybeHandleQualityRange(
+function maybeHandleQualitySnapshot(
   pathname: string,
   request: Request,
   context: RequestContext,
 ): Promise<Response> | null {
-  if (pathname !== "/api/quality") {
+  if (pathname !== "/api/quality/snapshot") {
     return null;
   }
 
-  assertMethod(request, "GET", "/api/quality");
-  return handleQualityRange(request, context);
+  assertMethod(request, "GET", "/api/quality/snapshot");
+  return handleQualitySnapshot(request, context);
+}
+
+function maybeHandleQualityCompare(
+  pathname: string,
+  request: Request,
+  context: RequestContext,
+): Promise<Response> | null {
+  if (pathname !== "/api/quality/compare") {
+    return null;
+  }
+
+  assertMethod(request, "GET", "/api/quality/compare");
+  return handleQualityCompare(request, context);
 }
 
 async function createHealthResponse(
@@ -217,7 +232,8 @@ async function routeRequest(request: Request, context: RequestContext): Promise<
     maybeHandleInternalFinalize(pathname, request, context) ??
     maybeHandleMetadata(pathname, request, context) ??
     maybeHandleQualityLatest(pathname, request, context) ??
-    maybeHandleQualityRange(pathname, request, context) ??
+    maybeHandleQualitySnapshot(pathname, request, context) ??
+    maybeHandleQualityCompare(pathname, request, context) ??
     maybeHandleHealth(pathname, request, context);
 
   if (routedResponse !== null) {
