@@ -164,3 +164,75 @@ func TestRunnerRunAbortsRowUpsertOnLeaseHeartbeatFailure(t *testing.T) {
 		t.Fatalf("ErrorSummary = %q, want it to name the lease failure", ingest.finalizeCalls[0].ErrorSummary)
 	}
 }
+
+func TestNextLeaseHeartbeatDelayAndSummarizeError(t *testing.T) {
+	now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+	if delay := nextLeaseHeartbeatDelay(now, now.Add(2*time.Hour)); delay != maxLeaseHeartbeatWait {
+		t.Fatalf("nextLeaseHeartbeatDelay(long lease) = %s, want %s", delay, maxLeaseHeartbeatWait)
+	}
+
+	if delay := nextLeaseHeartbeatDelay(now, now.Add(10*time.Second)); delay != 5*time.Second {
+		t.Fatalf("nextLeaseHeartbeatDelay(short lease) = %s, want %s", delay, 5*time.Second)
+	}
+
+	if delay := nextLeaseHeartbeatDelay(now, now); delay != 0 {
+		t.Fatalf("nextLeaseHeartbeatDelay(expired lease) = %s, want %s", delay, 0*time.Second)
+	}
+
+	longError := errors.New(strings.Repeat("x", maxErrorSummaryLength+10))
+	if got := len(summarizeError(longError)); got != maxErrorSummaryLength {
+		t.Fatalf("len(summarizeError(longError)) = %d, want %d", got, maxErrorSummaryLength)
+	}
+
+	if got := summarizeError(nil); got != "" {
+		t.Fatalf("summarizeError(nil) = %q, want empty string", got)
+	}
+
+	if err := pollLeaseError(make(chan error)); err != nil {
+		t.Fatalf("pollLeaseError(empty) = %v, want nil", err)
+	}
+
+	leaseErrors := make(chan error, 1)
+	leaseErrors <- errors.New("lease lost")
+	if err := pollLeaseError(leaseErrors); err == nil || err.Error() != "lease lost" {
+		t.Fatalf("pollLeaseError(buffered) = %v, want lease error", err)
+	}
+}
+
+func TestFinalizeFailureHandlesNilAndFinalizeErrors(t *testing.T) {
+	runner, err := NewRunner(&fakeSearch{}, &fakeIngest{}, stubClock{})
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	if err := runner.finalizeFailure("run-1", nil); err != nil {
+		t.Fatalf("finalizeFailure(nil) error = %v, want nil", err)
+	}
+
+	ingest := &fakeIngest{
+		heartbeatErr: errors.New("heartbeat denied"),
+	}
+	runner, err = NewRunner(&fakeSearch{}, ingest, stubClock{})
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	err = runner.finalizeFailure("run-2", errors.New("search failed"))
+	if err == nil || !strings.Contains(err.Error(), "refresh lease before finalizing") {
+		t.Fatalf("finalizeFailure(refresh error) = %v, want joined refresh error", err)
+	}
+
+	ingest = &fakeIngest{
+		heartbeatResult: HeartbeatResult{LeaseExpiresAt: time.Now().UTC().Add(time.Minute)},
+		finalizeErr:     errors.New("cannot finalize"),
+	}
+	runner, err = NewRunner(&fakeSearch{}, ingest, stubClock{})
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	err = runner.finalizeFailure("run-3", errors.New("search failed"))
+	if err == nil || !strings.Contains(err.Error(), "cannot finalize") {
+		t.Fatalf("finalizeFailure(finalize error) = %v, want joined finalize error", err)
+	}
+}

@@ -27,11 +27,14 @@ type fakeSearch struct {
 	counts map[string]int
 	err    error
 	delay  time.Duration
+	mu     sync.Mutex
 	seen   []string
 }
 
 func (s *fakeSearch) CountRepositories(ctx context.Context, observedDate Day, query string) (int, error) {
+	s.mu.Lock()
 	s.seen = append(s.seen, query)
+	s.mu.Unlock()
 
 	if s.delay > 0 {
 		timer := time.NewTimer(s.delay)
@@ -62,11 +65,15 @@ type gatedSearch struct {
 	started   chan struct{}
 	release   chan struct{}
 	startOnce sync.Once
+	mu        sync.Mutex
 	seen      []string
 }
 
 func (s *gatedSearch) CountRepositories(ctx context.Context, observedDate Day, query string) (int, error) {
+	s.mu.Lock()
 	s.seen = append(s.seen, query)
+	s.mu.Unlock()
+
 	s.startOnce.Do(func() {
 		close(s.started)
 	})
@@ -84,13 +91,24 @@ func (s *gatedSearch) CountRepositories(ctx context.Context, observedDate Day, q
 	return s.result, nil
 }
 
+func (s *gatedSearch) seenQueries() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	queries := make([]string, len(s.seen))
+	copy(queries, s.seen)
+	return queries
+}
+
 type fakeIngest struct {
 	createResult    CreatedRun
 	heartbeatResult HeartbeatResult
 	finalizeResult  FinalizeResult
 	createCalls     []CreateRunRequest
 	heartbeatCalls  []string
+	rowsMu          sync.Mutex
 	rows            []RowUpsert
+	upsertBatches   int
 	finalizeCalls   []FinalizeRequest
 	createErr       error
 	heartbeatErr    error
@@ -116,8 +134,12 @@ func (f *fakeIngest) HeartbeatRun(ctx context.Context, runID string) (HeartbeatR
 	return f.heartbeatResult, nil
 }
 
-func (f *fakeIngest) UpsertRow(ctx context.Context, row RowUpsert) error {
-	f.rows = append(f.rows, row)
+func (f *fakeIngest) UpsertRows(ctx context.Context, rows []RowUpsert) error {
+	f.rowsMu.Lock()
+	defer f.rowsMu.Unlock()
+
+	f.upsertBatches++
+	f.rows = append(f.rows, rows...)
 	return f.upsertErr
 }
 
@@ -317,8 +339,8 @@ func TestRunnerRunStopsLeaseMaintainerBeforeFinalizingCompletedRun(t *testing.T)
 		t.Fatalf("len(heartbeatCalls) = %d, want %d", len(ingest.heartbeatCalls), 2)
 	}
 
-	if len(search.seen) != 1 || search.seen[0] != expectedQuery {
-		t.Fatalf("search.seen = %#v, want [%q]", search.seen, expectedQuery)
+	if seen := search.seenQueries(); len(seen) != 1 || seen[0] != expectedQuery {
+		t.Fatalf("search.seen = %#v, want [%q]", seen, expectedQuery)
 	}
 
 	if outcome.result.PublishedAt == nil || !outcome.result.PublishedAt.Equal(publishedAt) {
@@ -421,8 +443,8 @@ func TestRunnerRunStopsLeaseMaintainerBeforeFinalizingFailedRun(t *testing.T) {
 		t.Fatalf("finalizeCalls = %#v, want one failed finalize", ingest.finalizeCalls)
 	}
 
-	if len(search.seen) != 1 || search.seen[0] != expectedQuery {
-		t.Fatalf("search.seen = %#v, want [%q]", search.seen, expectedQuery)
+	if seen := search.seenQueries(); len(seen) != 1 || seen[0] != expectedQuery {
+		t.Fatalf("search.seen = %#v, want [%q]", seen, expectedQuery)
 	}
 }
 
@@ -540,78 +562,6 @@ func TestValidateObservedDateAndRetryGuards(t *testing.T) {
 		10*time.Second,
 	); ok {
 		t.Fatal("ClampRetryDelay(cross boundary) ok = true, want false")
-	}
-}
-
-func TestNextLeaseHeartbeatDelayAndSummarizeError(t *testing.T) {
-	now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
-	if delay := nextLeaseHeartbeatDelay(now, now.Add(2*time.Hour)); delay != maxLeaseHeartbeatWait {
-		t.Fatalf("nextLeaseHeartbeatDelay(long lease) = %s, want %s", delay, maxLeaseHeartbeatWait)
-	}
-
-	if delay := nextLeaseHeartbeatDelay(now, now.Add(10*time.Second)); delay != 5*time.Second {
-		t.Fatalf("nextLeaseHeartbeatDelay(short lease) = %s, want %s", delay, 5*time.Second)
-	}
-
-	if delay := nextLeaseHeartbeatDelay(now, now); delay != 0 {
-		t.Fatalf("nextLeaseHeartbeatDelay(expired lease) = %s, want %s", delay, 0*time.Second)
-	}
-
-	longError := errors.New(strings.Repeat("x", maxErrorSummaryLength+10))
-	if got := len(summarizeError(longError)); got != maxErrorSummaryLength {
-		t.Fatalf("len(summarizeError(longError)) = %d, want %d", got, maxErrorSummaryLength)
-	}
-
-	if got := summarizeError(nil); got != "" {
-		t.Fatalf("summarizeError(nil) = %q, want empty string", got)
-	}
-
-	if err := pollLeaseError(make(chan error)); err != nil {
-		t.Fatalf("pollLeaseError(empty) = %v, want nil", err)
-	}
-
-	leaseErrors := make(chan error, 1)
-	leaseErrors <- errors.New("lease lost")
-	if err := pollLeaseError(leaseErrors); err == nil || err.Error() != "lease lost" {
-		t.Fatalf("pollLeaseError(buffered) = %v, want lease error", err)
-	}
-}
-
-func TestFinalizeFailureHandlesNilAndFinalizeErrors(t *testing.T) {
-	runner, err := NewRunner(&fakeSearch{}, &fakeIngest{}, stubClock{})
-	if err != nil {
-		t.Fatalf("NewRunner() error = %v", err)
-	}
-
-	if err := runner.finalizeFailure("run-1", nil); err != nil {
-		t.Fatalf("finalizeFailure(nil) error = %v, want nil", err)
-	}
-
-	ingest := &fakeIngest{
-		heartbeatErr: errors.New("heartbeat denied"),
-	}
-	runner, err = NewRunner(&fakeSearch{}, ingest, stubClock{})
-	if err != nil {
-		t.Fatalf("NewRunner() error = %v", err)
-	}
-
-	err = runner.finalizeFailure("run-2", errors.New("search failed"))
-	if err == nil || !strings.Contains(err.Error(), "refresh lease before finalizing") {
-		t.Fatalf("finalizeFailure(refresh error) = %v, want joined refresh error", err)
-	}
-
-	ingest = &fakeIngest{
-		heartbeatResult: HeartbeatResult{LeaseExpiresAt: time.Now().UTC().Add(time.Minute)},
-		finalizeErr:     errors.New("cannot finalize"),
-	}
-	runner, err = NewRunner(&fakeSearch{}, ingest, stubClock{})
-	if err != nil {
-		t.Fatalf("NewRunner() error = %v", err)
-	}
-
-	err = runner.finalizeFailure("run-3", errors.New("search failed"))
-	if err == nil || !strings.Contains(err.Error(), "cannot finalize") {
-		t.Fatalf("finalizeFailure(finalize error) = %v, want joined finalize error", err)
 	}
 }
 

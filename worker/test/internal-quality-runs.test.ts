@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createHarness,
   dispatch,
-  getRow,
   getRun,
   insertRun,
   makeInternalRequest,
@@ -116,59 +115,6 @@ describe("internal quality run routes", () => {
     expect(heartbeatBody.run.lease_expires_at).toBe("2026-04-07T12:08:00.000Z");
   });
 
-  it("upserts rows idempotently without inflating actual_rows", async () => {
-    const harness = createHarness();
-    const createResponse = await dispatch(
-      harness.app,
-      makeInternalRequest("/internal/quality-runs", "POST", {
-        observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
-      }),
-    );
-    const createdRun = await readJson<{ run: { run_id: string } } & Record<string, unknown>>(
-      createResponse,
-    );
-    expectRunEnvelope(createdRun);
-
-    const firstWrite = await dispatch(
-      harness.app,
-      makeInternalRequest(
-        `/internal/quality-runs/${createdRun.run.run_id}/rows/go/0`,
-        "PUT",
-        {
-          count: 12,
-          collected_at: TEST_NOW,
-        },
-      ),
-    );
-    const secondWrite = await dispatch(
-      harness.app,
-      makeInternalRequest(
-        `/internal/quality-runs/${createdRun.run.run_id}/rows/go/0`,
-        "PUT",
-        {
-          count: 18,
-          collected_at: "2026-04-07T12:01:00.000Z",
-        },
-      ),
-    );
-
-    expect(firstWrite.status).toBe(200);
-    expect(secondWrite.status).toBe(200);
-
-    const secondWriteBody = await readJson<
-      { run: { actual_rows: number } } & Record<string, unknown>
-    >(secondWrite);
-    expectRunEnvelope(secondWriteBody);
-    expect(secondWriteBody.run.actual_rows).toBe(1);
-
-    const storedRow = await getRow(createdRun.run.run_id, "go", 0);
-    expect(storedRow).toEqual({
-      count: 18,
-      collected_at: "2026-04-07T12:01:00.000Z",
-    });
-  });
-
   it("keeps finalization idempotent and blocks new attempts after publication", async () => {
     const harness = createHarness();
     const createResponse = await dispatch(
@@ -183,27 +129,22 @@ describe("internal quality run routes", () => {
     );
     expectRunEnvelope(createdRun);
 
-    const rowWrites = [
-      ["go", 0, 100],
-      ["go", 10, 80],
-      ["rust", 0, 70],
-      ["rust", 10, 60],
-    ] as const;
-
-    for (const [languageId, thresholdValue, count] of rowWrites) {
-      const response = await dispatch(
-        harness.app,
-        makeInternalRequest(
-          `/internal/quality-runs/${createdRun.run.run_id}/rows/${languageId}/${thresholdValue}`,
-          "PUT",
-          {
-            count,
-            collected_at: TEST_NOW,
-          },
-        ),
-      );
-      expect(response.status).toBe(200);
-    }
+    const batchResponse = await dispatch(
+      harness.app,
+      makeInternalRequest(
+        `/internal/quality-runs/${createdRun.run.run_id}/rows:batch`,
+        "POST",
+        {
+          rows: [
+            { language_id: "go", threshold_value: 0, count: 100, collected_at: TEST_NOW },
+            { language_id: "go", threshold_value: 10, count: 80, collected_at: TEST_NOW },
+            { language_id: "rust", threshold_value: 0, count: 70, collected_at: TEST_NOW },
+            { language_id: "rust", threshold_value: 10, count: 60, collected_at: TEST_NOW },
+          ],
+        },
+      ),
+    );
+    expect(batchResponse.status).toBe(200);
 
     const finalizeResponse = await dispatch(
       harness.app,
@@ -263,11 +204,12 @@ describe("internal quality run routes", () => {
     const rowResponse = await dispatch(
       harness.app,
       makeInternalRequest(
-        `/internal/quality-runs/${createdRun.run.run_id}/rows/go/0`,
-        "PUT",
+        `/internal/quality-runs/${createdRun.run.run_id}/rows:batch`,
+        "POST",
         {
-          count: 20,
-          collected_at: TEST_NOW,
+          rows: [
+            { language_id: "go", threshold_value: 0, count: 20, collected_at: TEST_NOW },
+          ],
         },
       ),
     );

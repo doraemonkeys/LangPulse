@@ -4,19 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
-const (
-	maxErrorSummaryLength = 1024
-	maxLeaseHeartbeatWait = 30 * time.Second
-	// finalizeFailureTimeout bounds the detached context used to mark a run
-	// failed after a cancellation (SIGINT, test deadline) has already propagated
-	// through the caller's ctx. Without a detached deadline, the run would leak
-	// in `running` state until the Worker's lease sweeper reaps it.
-	finalizeFailureTimeout = 30 * time.Second
-)
+// DefaultWorkerConcurrency is the collector's default GitHub-search fan-out,
+// shared between the CLI entry point and the Runner so both layers agree on a
+// single source of truth. Kept small because the shared rate limiter caps
+// steady-state throughput at 30 req/min — more workers only flattens
+// first-packet RTT, not throughput.
+const DefaultWorkerConcurrency = 4
 
 var (
 	ErrBeforeLaunchDate          = errors.New("collector target date precedes launch date")
@@ -35,7 +34,7 @@ type RepositoryCounter interface {
 type RunIngestor interface {
 	CreateRun(ctx context.Context, request CreateRunRequest) (CreatedRun, error)
 	HeartbeatRun(ctx context.Context, runID string) (HeartbeatResult, error)
-	UpsertRow(ctx context.Context, row RowUpsert) error
+	UpsertRows(ctx context.Context, rows []RowUpsert) error
 	FinalizeRun(ctx context.Context, request FinalizeRequest) (FinalizeResult, error)
 }
 
@@ -91,15 +90,28 @@ type RunResult struct {
 }
 
 type Runner struct {
-	search RepositoryCounter
-	ingest RunIngestor
-	clock  Clock
+	search      RepositoryCounter
+	ingest      RunIngestor
+	clock       Clock
+	workerCount int
 }
 
-type leaseController struct {
-	cancel context.CancelFunc
-	done   <-chan struct{}
-	errors <-chan error
+// Option mutates a Runner during construction. Functional options keep
+// NewRunner's positional signature stable while letting the CLI wire in
+// settings like concurrency without breaking downstream callers.
+type Option func(*Runner)
+
+// WithConcurrency overrides the worker fan-out used during the search phase.
+// Values <= 0 fall back to DefaultWorkerConcurrency so callers can pass a
+// 0-sentinel for "not configured" without bespoke branching.
+func WithConcurrency(workerCount int) Option {
+	return func(runner *Runner) {
+		if workerCount <= 0 {
+			runner.workerCount = DefaultWorkerConcurrency
+			return
+		}
+		runner.workerCount = workerCount
+	}
 }
 
 type realClock struct{}
@@ -108,49 +120,7 @@ func (realClock) Now() time.Time {
 	return time.Now().UTC()
 }
 
-func startLeaseController(
-	parent context.Context,
-	clock Clock,
-	ingest RunIngestor,
-	runID string,
-	leaseExpiresAt time.Time,
-	cancelWork context.CancelFunc,
-) leaseController {
-	ctx, cancel := context.WithCancel(parent)
-	leaseErrors := make(chan error, 1)
-	leaseDone := make(chan struct{})
-
-	go func() {
-		defer close(leaseDone)
-		maintainLease(ctx, clock, ingest, runID, leaseExpiresAt, leaseErrors, cancelWork)
-	}()
-
-	return leaseController{
-		cancel: cancel,
-		done:   leaseDone,
-		errors: leaseErrors,
-	}
-}
-
-func (c leaseController) PendingError() error {
-	return pollLeaseError(c.errors)
-}
-
-func (c leaseController) Stop() error {
-	if c.cancel != nil {
-		c.cancel()
-	}
-
-	// Terminal run mutations must wait until the background renewer has stopped
-	// touching the ingestor so ownership transfers back to the caller cleanly.
-	if c.done != nil {
-		<-c.done
-	}
-
-	return pollLeaseError(c.errors)
-}
-
-func NewRunner(search RepositoryCounter, ingest RunIngestor, clock Clock) (Runner, error) {
+func NewRunner(search RepositoryCounter, ingest RunIngestor, clock Clock, options ...Option) (Runner, error) {
 	switch {
 	case search == nil:
 		return Runner{}, errors.New("repository counter is required")
@@ -160,11 +130,18 @@ func NewRunner(search RepositoryCounter, ingest RunIngestor, clock Clock) (Runne
 		clock = realClock{}
 	}
 
-	return Runner{
-		search: search,
-		ingest: ingest,
-		clock:  clock,
-	}, nil
+	runner := Runner{
+		search:      search,
+		ingest:      ingest,
+		clock:       clock,
+		workerCount: DefaultWorkerConcurrency,
+	}
+
+	for _, option := range options {
+		option(&runner)
+	}
+
+	return runner, nil
 }
 
 func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (result RunResult, err error) {
@@ -243,31 +220,24 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 		return errors.Join(finalizeErr, leaseErr)
 	}
 
-	for _, language := range activeLanguages {
-		for _, threshold := range activeThresholds {
-			if err := lease.PendingError(); err != nil {
-				return result, failRun(fmt.Errorf("lease heartbeat failed for run %s: %w", createdRun.RunID, err))
-			}
+	tasks := buildRunTasks(registry, activeLanguages, activeThresholds, observedDate)
 
-			query := BuildSearchQuery(registry.WindowDays, language, threshold, observedDate)
-			count, err := r.search.CountRepositories(workCtx, observedDate, query)
-			if err != nil {
-				return result, failRun(fmt.Errorf("collect %s threshold %d: %w", language.ID, threshold.Value, err))
-			}
+	rows, err := r.collectRows(workCtx, tasks, createdRun.RunID, observedDate, lease)
+	if err != nil {
+		return result, failRun(err)
+	}
 
-			if err := r.ingest.UpsertRow(workCtx, RowUpsert{
-				RunID:          createdRun.RunID,
-				LanguageID:     language.ID,
-				ThresholdValue: threshold.Value,
-				Count:          count,
-				CollectedAt:    r.clock.Now().UTC(),
-			}); err != nil {
-				return result, failRun(fmt.Errorf("store %s threshold %d: %w", language.ID, threshold.Value, err))
-			}
-
-			result.RowsWritten++
+	// Skip the batch call when there are no active (language, threshold) pairs.
+	// UpsertRows enforces a non-empty contract; sending an empty batch here
+	// would be a redundant round-trip and a semantic lie ("we collected nothing
+	// on purpose" vs. "there was nothing to collect").
+	if len(rows) > 0 {
+		if err := r.ingest.UpsertRows(workCtx, rows); err != nil {
+			return result, failRun(fmt.Errorf("store rows for run %s: %w", createdRun.RunID, err))
 		}
 	}
+
+	result.RowsWritten = len(rows)
 
 	if err := stopLease(); err != nil {
 		return result, err
@@ -287,6 +257,87 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 
 	result.PublishedAt = finalized.PublishedAt
 	return result, nil
+}
+
+// runTask flattens the (language, threshold) cartesian product so the worker
+// pool can treat each search call as an independent unit. Pre-computing the
+// query once avoids duplicating the BuildSearchQuery call in the hot loop.
+type runTask struct {
+	language  Language
+	threshold Threshold
+	query     string
+}
+
+func buildRunTasks(registry Config, languages []Language, thresholds []Threshold, observedDate Day) []runTask {
+	tasks := make([]runTask, 0, len(languages)*len(thresholds))
+	for _, language := range languages {
+		for _, threshold := range thresholds {
+			tasks = append(tasks, runTask{
+				language:  language,
+				threshold: threshold,
+				query:     BuildSearchQuery(registry.WindowDays, language, threshold, observedDate),
+			})
+		}
+	}
+	return tasks
+}
+
+// collectRows fans search calls out across a worker pool, collects results
+// under a mutex, and returns the full batch once every worker finishes.
+// errgroup preserves the first real error — sibling workers observe
+// context.Canceled after that, and we ignore their cascade when reporting the
+// root cause (failRun re-orders leaseErr ahead of original via the caller).
+func (r Runner) collectRows(
+	ctx context.Context,
+	tasks []runTask,
+	runID string,
+	observedDate Day,
+	lease leaseController,
+) ([]RowUpsert, error) {
+	if leaseErr := lease.PendingError(); leaseErr != nil {
+		return nil, fmt.Errorf("lease heartbeat failed for run %s: %w", runID, leaseErr)
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(r.workerCount)
+
+	var (
+		rowsMu sync.Mutex
+		rows   = make([]RowUpsert, 0, len(tasks))
+	)
+
+	for _, task := range tasks {
+		group.Go(func() error {
+			// groupCtx is the errgroup-derived ctx: if any sibling worker
+			// returns an error, groupCtx is cancelled and CountRepositories
+			// observes it immediately instead of burning another GitHub token.
+			count, err := r.search.CountRepositories(groupCtx, observedDate, task.query)
+			if err != nil {
+				return fmt.Errorf("collect %s threshold %d: %w", task.language.ID, task.threshold.Value, err)
+			}
+
+			rowsMu.Lock()
+			rows = append(rows, RowUpsert{
+				RunID:          runID,
+				LanguageID:     task.language.ID,
+				ThresholdValue: task.threshold.Value,
+				Count:          count,
+				CollectedAt:    r.clock.Now().UTC(),
+			})
+			rowsMu.Unlock()
+			return nil
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	if leaseErr := lease.PendingError(); leaseErr != nil {
+		return nil, fmt.Errorf("lease heartbeat failed for run %s: %w", runID, leaseErr)
+	}
+
+	return rows, nil
 }
 
 func ValidateObservedDate(now time.Time, observedDate Day, launchDate Day) error {
@@ -322,118 +373,6 @@ func ClampRetryDelay(now time.Time, observedDate Day, proposedDelay time.Duratio
 	}
 
 	return proposedDelay, true
-}
-
-func summarizeError(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	// The Worker stores diagnostics alongside run history, so the collector keeps
-	// the summary bounded instead of sending arbitrarily large payloads.
-	summary := strings.TrimSpace(err.Error())
-	if len(summary) <= maxErrorSummaryLength {
-		return summary
-	}
-
-	return strings.TrimSpace(summary[:maxErrorSummaryLength])
-}
-
-func (r Runner) finalizeFailure(runID string, original error) error {
-	if original == nil {
-		return nil
-	}
-
-	// Detached from the caller's ctx: if the run was aborted because the parent
-	// ctx was cancelled (SIGINT, harness deadline), we still need to mark the
-	// run failed server-side. Inheriting the cancelled ctx would leak the run in
-	// `running` state until the Worker's lease sweeper reaps it.
-	ctx, cancel := context.WithTimeout(context.Background(), finalizeFailureTimeout)
-	defer cancel()
-
-	if _, err := r.ingest.HeartbeatRun(ctx, runID); err != nil {
-		return errors.Join(original, fmt.Errorf("refresh lease before finalizing run %s: %w", runID, err))
-	}
-
-	if _, err := r.ingest.FinalizeRun(ctx, FinalizeRequest{
-		RunID:        runID,
-		Status:       FinalStatusFailed,
-		ErrorSummary: summarizeError(original),
-	}); err != nil {
-		return errors.Join(original, fmt.Errorf("finalize failed run %s: %w", runID, err))
-	}
-
-	return original
-}
-
-func maintainLease(
-	ctx context.Context,
-	clock Clock,
-	ingest RunIngestor,
-	runID string,
-	leaseExpiresAt time.Time,
-	leaseErrors chan<- error,
-	cancelWork context.CancelFunc,
-) {
-	currentLease := leaseExpiresAt.UTC()
-
-	for {
-		wait := nextLeaseHeartbeatDelay(clock.Now(), currentLease)
-		timer := time.NewTimer(wait)
-
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-
-		heartbeat, err := ingest.HeartbeatRun(ctx, runID)
-		if err != nil {
-			// Filter shutdown-origin errors: if ctx was already cancelled,
-			// lease.Stop() reaped a heartbeat that was mid-flight. That's not a
-			// lease failure — the caller is tearing us down.
-			if ctx.Err() != nil {
-				return
-			}
-			select {
-			case leaseErrors <- err:
-			default:
-			}
-			// Propagate the failure to the caller's work ctx so in-flight
-			// search/upsert calls abort immediately instead of waiting for the
-			// next row-loop iteration's PendingError() poll.
-			if cancelWork != nil {
-				cancelWork()
-			}
-			return
-		}
-
-		currentLease = heartbeat.LeaseExpiresAt.UTC()
-	}
-}
-
-func nextLeaseHeartbeatDelay(now time.Time, leaseExpiresAt time.Time) time.Duration {
-	remaining := leaseExpiresAt.UTC().Sub(now.UTC())
-	if remaining <= 0 {
-		return 0
-	}
-
-	wait := remaining / 2
-	if wait > maxLeaseHeartbeatWait {
-		return maxLeaseHeartbeatWait
-	}
-
-	return wait
-}
-
-func pollLeaseError(leaseErrors <-chan error) error {
-	select {
-	case err := <-leaseErrors:
-		return err
-	default:
-		return nil
-	}
 }
 
 func sameDay(left Day, right Day) bool {

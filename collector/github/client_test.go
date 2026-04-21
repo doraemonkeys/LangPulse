@@ -9,8 +9,11 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/langpulse/collector/quality"
 )
@@ -21,9 +24,31 @@ type stubClock struct {
 
 func (c stubClock) Now() time.Time { return c.now }
 
+// unlimited returns a limiter that never blocks. Tests whose focus lies
+// outside the rate-limit path use it to stay fast and deterministic.
+func unlimited() *rate.Limiter {
+	return rate.NewLimiter(rate.Inf, 1)
+}
+
 func TestNewClientRequiresToken(t *testing.T) {
 	if _, err := NewClient(""); err == nil {
 		t.Fatal("NewClient() error = nil, want missing token error")
+	}
+}
+
+func TestNewClientDefaultsToBuiltInLimiter(t *testing.T) {
+	client, err := NewClient("token")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.limiter == nil {
+		t.Fatal("NewClient() limiter = nil, want default limiter constructed")
+	}
+
+	expectedInterval := time.Minute / time.Duration(DefaultRequestsPerMinute)
+	if client.interval != expectedInterval {
+		t.Fatalf("NewClient() interval = %s, want %s", client.interval, expectedInterval)
 	}
 }
 
@@ -55,6 +80,7 @@ func TestCountRepositoriesUsesEscapedQueryAndHeaders(t *testing.T) {
 		"token",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
+		WithRateLimit(unlimited()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -106,6 +132,7 @@ func TestCountRepositoriesRetriesWithinObservedDate(t *testing.T) {
 			return nil
 		}),
 		WithRetryPolicy(2, time.Second, 10*time.Second),
+		WithRateLimit(unlimited()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -147,6 +174,7 @@ func TestCountRepositoriesStopsAtDayBoundary(t *testing.T) {
 			return nil
 		}),
 		WithRetryPolicy(2, time.Second, time.Minute),
+		WithRateLimit(unlimited()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -173,6 +201,7 @@ func TestCountRepositoriesRejectsIncompleteResults(t *testing.T) {
 		"token",
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
+		WithRateLimit(unlimited()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -185,7 +214,7 @@ func TestCountRepositoriesRejectsIncompleteResults(t *testing.T) {
 }
 
 func TestCountRepositoriesRejectsBlankQuery(t *testing.T) {
-	client, err := NewClient("token")
+	client, err := NewClient("token", WithRateLimit(unlimited()))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
@@ -258,6 +287,7 @@ func TestCountRepositoriesStopsOnNonRetryableError(t *testing.T) {
 		WithBaseURL(server.URL),
 		WithHTTPClient(server.Client()),
 		WithRetryPolicy(3, time.Second, time.Minute),
+		WithRateLimit(unlimited()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
@@ -270,7 +300,7 @@ func TestCountRepositoriesStopsOnNonRetryableError(t *testing.T) {
 }
 
 func TestCountRepositoriesRejectsInvalidBaseURLAndStructuredErrors(t *testing.T) {
-	client, err := NewClient("token", WithBaseURL("://bad-url"))
+	client, err := NewClient("token", WithBaseURL("://bad-url"), WithRateLimit(unlimited()))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
@@ -286,6 +316,291 @@ func TestCountRepositoriesRejectsInvalidBaseURLAndStructuredErrors(t *testing.T)
 	}
 	if err := decodeAPIError(response); err == nil || !strings.Contains(err.Error(), "secondary_rate_limit") {
 		t.Fatalf("decodeAPIError(structured) error = %v, want code in message", err)
+	}
+}
+
+// TestLimiterWaitIsCalledOncePerRequest drives the client through a narrow
+// limiter (1 token, burst 1, refill every 40ms) and verifies that N sequential
+// requests take at least (N-1) * interval wall time, the observable signature
+// of N-1 Wait() blocks.
+func TestLimiterWaitIsCalledOncePerRequest(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		hits.Add(1)
+		if err := json.NewEncoder(writer).Encode(map[string]any{
+			"total_count":        1,
+			"incomplete_results": false,
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	const (
+		interval       = 40 * time.Millisecond
+		requests       = 4
+		expectedBlocks = requests - 1
+	)
+
+	limiter := rate.NewLimiter(rate.Every(interval), 1)
+	client, err := NewClient(
+		"token",
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+		WithRateLimit(limiter),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	start := time.Now()
+	for i := 0; i < requests; i++ {
+		if _, err := client.CountRepositories(context.Background(), mustDay(t, "2026-04-07"), "language:go"); err != nil {
+			t.Fatalf("CountRepositories() error = %v", err)
+		}
+	}
+	elapsed := time.Since(start)
+
+	// Each of the (requests-1) subsequent Wait() calls must block for at
+	// least `interval`. The first request drains the burst with no wait. A
+	// looser lower bound leaves room for scheduler jitter but still catches a
+	// regression where Wait is skipped entirely.
+	minElapsed := time.Duration(expectedBlocks) * interval
+	if elapsed < minElapsed {
+		t.Fatalf("elapsed = %s, want >= %s (%d Wait blocks of %s)", elapsed, minElapsed, expectedBlocks, interval)
+	}
+
+	if int(hits.Load()) != requests {
+		t.Fatalf("server hits = %d, want %d", hits.Load(), requests)
+	}
+}
+
+// TestLowRemainingTriggersActiveSleep verifies that a 2xx response with
+// X-RateLimit-Resource=search and remaining<threshold pushes the shared
+// limiter's next token out to the advertised reset time, so a subsequent
+// Wait() blocks until that window opens.
+//
+// GitHub emits X-RateLimit-Reset in whole unix seconds, so the test must use
+// a reset offset of at least one second. Otherwise the Unix() truncation
+// wipes the gap out before the client can act on it.
+func TestLowRemainingTriggersActiveSleep(t *testing.T) {
+	// resetOffset is chosen so the observable stall is much larger than
+	// scheduler jitter but the whole test still completes well under a second.
+	const resetOffset = 2 * time.Second
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		resetAt := time.Now().UTC().Add(resetOffset).Unix()
+		writer.Header().Set("X-RateLimit-Resource", "search")
+		writer.Header().Set("X-RateLimit-Remaining", "2")
+		writer.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"total_count":        1,
+			"incomplete_results": false,
+		})
+	}))
+	defer server.Close()
+
+	// interval=10ms, burst=2 is narrow enough that applyRateLimitHeaders has
+	// to reserve ~200 tokens to cover the reset gap, exercising the full
+	// cumulative-shift path.
+	limiter := rate.NewLimiter(rate.Every(10*time.Millisecond), 2)
+	client, err := NewClient(
+		"token",
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+		WithRateLimit(limiter),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	// Deadline guards against a regression where the pause is infinite.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := client.CountRepositories(ctx, mustDay(t, "2026-04-07"), "language:go"); err != nil {
+		t.Fatalf("CountRepositories(primer) error = %v", err)
+	}
+
+	start := time.Now()
+	if _, err := client.CountRepositories(ctx, mustDay(t, "2026-04-07"), "language:go"); err != nil {
+		t.Fatalf("CountRepositories(post-low-remaining) error = %v", err)
+	}
+	elapsed := time.Since(start)
+
+	// The Reset header rounds down to a whole second, so the effective gap is
+	// between (resetOffset - 1s) and resetOffset. Half of the floor is still
+	// orders of magnitude larger than the sub-ms speed of a bypassed limiter.
+	minElapsed := (resetOffset - time.Second) / 2
+	if elapsed < minElapsed {
+		t.Fatalf("elapsed = %s, want >= %s (low-remaining should have stalled Wait)", elapsed, minElapsed)
+	}
+}
+
+// TestLowRemainingIgnoredForNonSearchResource guards against mis-classifying
+// the core (5000/h) bucket as search (30/min). Returning a low-remaining signal
+// on a non-search resource must not disturb the limiter, otherwise every
+// core-bucket call would starve search-paced traffic.
+func TestLowRemainingIgnoredForNonSearchResource(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		resetAt := time.Now().UTC().Add(10 * time.Second).Unix()
+		writer.Header().Set("X-RateLimit-Resource", "core")
+		writer.Header().Set("X-RateLimit-Remaining", "1")
+		writer.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"total_count":        1,
+			"incomplete_results": false,
+		})
+	}))
+	defer server.Close()
+
+	// rate.Inf means any SetLimitAt/SetBurstAt(0) would become immediately
+	// observable as a Wait stall. If Wait stays instantaneous we've proven
+	// the non-search branch is a no-op.
+	limiter := rate.NewLimiter(rate.Inf, 1)
+	client, err := NewClient(
+		"token",
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+		WithRateLimit(limiter),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.CountRepositories(context.Background(), mustDay(t, "2026-04-07"), "language:go"); err != nil {
+		t.Fatalf("CountRepositories(primer) error = %v", err)
+	}
+
+	start := time.Now()
+	if _, err := client.CountRepositories(context.Background(), mustDay(t, "2026-04-07"), "language:go"); err != nil {
+		t.Fatalf("CountRepositories(follow-up) error = %v", err)
+	}
+	elapsed := time.Since(start)
+
+	// 50ms is huge relative to rate.Inf and local loopback RTT. A stall
+	// would dwarf it.
+	if elapsed > 50*time.Millisecond {
+		t.Fatalf("elapsed = %s, want near-zero (core-bucket headers must not adjust limiter)", elapsed)
+	}
+}
+
+// TestApplyRateLimitHeadersIgnoresMalformedValues covers the defensive
+// branches that shield the shared limiter from corrupt or absent headers
+// (GHE variants, buggy proxies, clock-skewed responses). Each row asserts
+// that applyRateLimitHeaders leaves the limiter untouched, i.e. subsequent
+// ReserveN availability is unchanged by the header contents.
+func TestApplyRateLimitHeadersIgnoresMalformedValues(t *testing.T) {
+	testCases := []struct {
+		name    string
+		headers http.Header
+	}{
+		{
+			name: "missing remaining",
+			headers: http.Header{
+				"X-Ratelimit-Resource": []string{"search"},
+				"X-Ratelimit-Reset":    []string{strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)},
+			},
+		},
+		{
+			name: "unparseable remaining",
+			headers: http.Header{
+				"X-Ratelimit-Resource":  []string{"search"},
+				"X-Ratelimit-Remaining": []string{"not-a-number"},
+				"X-Ratelimit-Reset":     []string{strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)},
+			},
+		},
+		{
+			name: "unparseable reset",
+			headers: http.Header{
+				"X-Ratelimit-Resource":  []string{"search"},
+				"X-Ratelimit-Remaining": []string{"1"},
+				"X-Ratelimit-Reset":     []string{"not-unix"},
+			},
+		},
+		{
+			name: "reset already in past",
+			headers: http.Header{
+				"X-Ratelimit-Resource":  []string{"search"},
+				"X-Ratelimit-Remaining": []string{"1"},
+				"X-Ratelimit-Reset":     []string{strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10)},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			limiter := rate.NewLimiter(rate.Every(time.Second), 1)
+			client := &Client{limiter: limiter, interval: time.Second, clock: realClock{}}
+			tokensBefore := limiter.Tokens()
+
+			client.applyRateLimitHeaders(testCase.headers)
+
+			// No observable limiter state change means the defensive branch
+			// short-circuited cleanly. We read Tokens() via a second call;
+			// a drain would knock it well below pre-call value.
+			if got := limiter.Tokens(); got < tokensBefore-0.1 {
+				t.Fatalf("limiter.Tokens() = %f, want >= %f (malformed header should be no-op)", got, tokensBefore-0.1)
+			}
+		})
+	}
+}
+
+// TestApplyRateLimitHeadersSkipsZeroBurstLimiter ensures the ReserveN loop
+// bails out on a degenerate burst=0 limiter instead of spinning forever. Such
+// a limiter can only be constructed by explicit caller misconfiguration; we
+// treat it as a no-op so a future operator injecting one does not get an
+// infinite hang.
+func TestApplyRateLimitHeadersSkipsZeroBurstLimiter(t *testing.T) {
+	limiter := rate.NewLimiter(rate.Every(time.Second), 0)
+	client := &Client{limiter: limiter, interval: time.Second, clock: realClock{}}
+
+	headers := http.Header{
+		"X-Ratelimit-Resource":  []string{"search"},
+		"X-Ratelimit-Remaining": []string{"1"},
+		"X-Ratelimit-Reset":     []string{strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		client.applyRateLimitHeaders(headers)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// expected: function returns without spinning
+	case <-time.After(time.Second):
+		t.Fatal("applyRateLimitHeaders did not return for burst=0 limiter within 1s")
+	}
+}
+
+// TestWithRateLimitNilIsNoOp guards the option against accidental nil pointers.
+// The default limiter must survive a nil injection.
+func TestWithRateLimitNilIsNoOp(t *testing.T) {
+	client, err := NewClient("token", WithRateLimit(nil))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.limiter == nil {
+		t.Fatal("NewClient(WithRateLimit(nil)) dropped the default limiter")
+	}
+}
+
+// TestIntervalFromLimitHandlesSentinels covers the two edge limits we care
+// about: rate.Inf (unlimited) and a finite pacing limit.
+func TestIntervalFromLimitHandlesSentinels(t *testing.T) {
+	if got := intervalFromLimit(rate.Inf); got != 0 {
+		t.Fatalf("intervalFromLimit(rate.Inf) = %s, want 0 (unlimited)", got)
+	}
+
+	if got := intervalFromLimit(rate.Every(2 * time.Second)); got != 2*time.Second {
+		t.Fatalf("intervalFromLimit(rate.Every(2s)) = %s, want 2s", got)
+	}
+
+	if got := intervalFromLimit(0); got != 0 {
+		t.Fatalf("intervalFromLimit(0) = %s, want 0", got)
 	}
 }
 

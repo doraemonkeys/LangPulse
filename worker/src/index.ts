@@ -5,7 +5,7 @@ import { checkDatabaseHealth } from "./public-quality";
 import { handleQualityRunsCreate } from "./routes/internal/quality-runs-create";
 import { handleQualityRunsFinalize } from "./routes/internal/quality-runs-finalize";
 import { handleQualityRunsHeartbeat } from "./routes/internal/quality-runs-heartbeat";
-import { handleQualityRunsRowUpsert } from "./routes/internal/quality-runs-row-upsert";
+import { handleQualityRunsRowsBatch } from "./routes/internal/quality-runs-rows-batch";
 import { handleMetadata } from "./routes/metadata";
 import { handleQualityLatest } from "./routes/quality";
 import { handleQualityCompare } from "./routes/quality-compare";
@@ -14,8 +14,9 @@ import { parseLeaseDurationSeconds } from "./time";
 import type { RequestContext, RuntimeDependencies, WorkerEnv } from "./types";
 
 const INTERNAL_HEARTBEAT_PATH = /^\/internal\/quality-runs\/([^/]+)\/heartbeat$/;
-const INTERNAL_ROW_UPSERT_PATH =
-  /^\/internal\/quality-runs\/([^/]+)\/rows\/([^/]+)\/([^/]+)$/;
+// Keeping the Google AIP ":batch" suffix signals that this is a custom method on
+// the rows collection rather than a sub-resource, matching the payload contract.
+const INTERNAL_ROW_BATCH_PATH = /^\/internal\/quality-runs\/([^/]+)\/rows:batch$/;
 const INTERNAL_FINALIZE_PATH = /^\/internal\/quality-runs\/([^/]+)\/finalize$/;
 
 function decodePathSegment(value: string): string {
@@ -70,25 +71,19 @@ function maybeHandleInternalHeartbeat(
   return handleQualityRunsHeartbeat(request, context, decodePathSegment(heartbeatMatch[1]!));
 }
 
-function maybeHandleInternalRowUpsert(
+function maybeHandleInternalRowBatch(
   pathname: string,
   request: Request,
   context: RequestContext,
 ): Promise<Response> | null {
-  const rowUpsertMatch = pathname.match(INTERNAL_ROW_UPSERT_PATH);
-  if (rowUpsertMatch === null) {
+  const rowBatchMatch = pathname.match(INTERNAL_ROW_BATCH_PATH);
+  if (rowBatchMatch === null) {
     return null;
   }
 
-  assertMethod(request, "PUT", "/internal/quality-runs/{run_id}/rows/{language_id}/{threshold_value}");
-  // Capture groups are guaranteed by INTERNAL_ROW_UPSERT_PATH on a non-null match.
-  return handleQualityRunsRowUpsert(
-    request,
-    context,
-    decodePathSegment(rowUpsertMatch[1]!),
-    decodePathSegment(rowUpsertMatch[2]!),
-    decodePathSegment(rowUpsertMatch[3]!),
-  );
+  assertMethod(request, "POST", "/internal/quality-runs/{run_id}/rows:batch");
+  // Capture group is guaranteed by INTERNAL_ROW_BATCH_PATH on a non-null match.
+  return handleQualityRunsRowsBatch(request, context, decodePathSegment(rowBatchMatch[1]!));
 }
 
 function maybeHandleInternalFinalize(
@@ -228,7 +223,7 @@ async function routeRequest(request: Request, context: RequestContext): Promise<
   const routedResponse =
     maybeHandleInternalCreate(pathname, request, context) ??
     maybeHandleInternalHeartbeat(pathname, request, context) ??
-    maybeHandleInternalRowUpsert(pathname, request, context) ??
+    maybeHandleInternalRowBatch(pathname, request, context) ??
     maybeHandleInternalFinalize(pathname, request, context) ??
     maybeHandleMetadata(pathname, request, context) ??
     maybeHandleQualityLatest(pathname, request, context) ??

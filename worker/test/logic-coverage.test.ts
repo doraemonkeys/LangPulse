@@ -18,7 +18,7 @@ import {
   checkDatabaseHealth,
   readLatestPublishedObservedDate,
 } from "../src/public-quality";
-import { finalizeQualityRun, heartbeatQualityRun, upsertQualityRunRow, validatePublicDateRange, createQualityRun } from "../src/quality-runs";
+import { finalizeQualityRun, heartbeatQualityRun, upsertQualityRunRows, validatePublicDateRange, createQualityRun } from "../src/quality-runs";
 import {
   assertPublicRange,
   assertUtcDate,
@@ -427,30 +427,26 @@ describe("supporting logic coverage", () => {
 
     await insertRun({ run_id: "row-run", attempt_no: 2 });
     await expect(
-      upsertQualityRunRow(createContext(), "row-run", "unknown", "0", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "row-run", {
+        rows: [{ language_id: "unknown", threshold_value: 0, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "unknown_language" });
 
     await expect(
-      upsertQualityRunRow(createContext(), "row-run", "go", "999", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "row-run", {
+        rows: [{ language_id: "go", threshold_value: 999, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "unknown_threshold" });
 
     await expect(
-      upsertQualityRunRow(createContext(), "row-run", "ruby", "0", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "row-run", {
+        rows: [{ language_id: "ruby", threshold_value: 0, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "language_inactive_for_observed_date" });
 
     await expect(
-      upsertQualityRunRow(createContext(), "row-run", "go", "50", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "row-run", {
+        rows: [{ language_id: "go", threshold_value: 50, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "threshold_inactive_for_observed_date" });
   });
@@ -563,7 +559,7 @@ describe("worker runtime branch coverage", () => {
 
     const rowWrongMethod = await dispatch(
       app,
-      new Request(`${TEST_BASE_URL}/internal/quality-runs/run-1/rows/go/0`, { method: "POST" }),
+      new Request(`${TEST_BASE_URL}/internal/quality-runs/run-1/rows:batch`, { method: "PUT" }),
     );
     expect(rowWrongMethod.status).toBe(405);
 
@@ -664,23 +660,20 @@ describe("worker runtime branch coverage", () => {
       error_summary: "already failed",
     });
     await expect(
-      upsertQualityRunRow(createContext(), "failed-row-write", "go", "0", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "failed-row-write", {
+        rows: [{ language_id: "go", threshold_value: 0, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "run_not_running" });
 
     await expect(
-      upsertQualityRunRow(createContext(), "failed-row-write", "go", "not-a-number", {
-        count: 1,
-        collected_at: TEST_NOW,
+      upsertQualityRunRows(createContext(), "failed-row-write", {
+        rows: [{ language_id: "go", threshold_value: -1, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "invalid_threshold_value" });
 
     await expect(
-      upsertQualityRunRow(createContext(), "failed-row-write", "go", "0", {
-        count: 1,
-        collected_at: "not-a-timestamp",
+      upsertQualityRunRows(createContext(), "failed-row-write", {
+        rows: [{ language_id: "go", threshold_value: 0, count: 1, collected_at: "not-a-timestamp" }],
       }),
     ).rejects.toMatchObject({ code: "invalid_collected_at" });
 

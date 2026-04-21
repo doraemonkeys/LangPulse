@@ -37,14 +37,6 @@ function asPositiveInteger(value: unknown, fieldName: string): number {
   return value as number;
 }
 
-function asNonNegativeInteger(value: unknown, fieldName: string): number {
-  if (!Number.isInteger(value) || (value as number) < 0) {
-    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} must be a non-negative integer.`);
-  }
-
-  return value as number;
-}
-
 function asOptionalErrorSummary(value: unknown): string | null {
   if (value === undefined || value === null) {
     return null;
@@ -211,17 +203,12 @@ function validateCreatePayload(
   return { observedDate, expectedRows };
 }
 
-function validateThresholdValue(thresholdValue: string): number {
-  if (!/^\d+$/.test(thresholdValue)) {
-    throw new HttpError(
-      400,
-      "invalid_threshold_value",
-      "threshold_value must be a non-negative integer path segment.",
-    );
-  }
-
-  return Number.parseInt(thresholdValue, 10);
-}
+// D1 limits a single prepared statement to 100 bind parameters. The batch handler
+// emits one INSERT per row (7 binds: 5 business columns plus the two-parameter
+// lease guard in `WHERE EXISTS` — runId repeated for status/nowIso) plus a
+// trailing actual_rows sync, so the absolute ceiling is driven by row count,
+// not per-row bind width.
+export const MAX_BATCH_ROWS = 500;
 
 function validateFinalizePayload(payload: Record<string, unknown>): FinalizeQualityRunRequest {
   if (payload.status !== RUN_STATUSES.complete && payload.status !== RUN_STATUSES.failed) {
@@ -400,18 +387,101 @@ export async function heartbeatQualityRun(
   return updatedRun;
 }
 
-export async function upsertQualityRunRow(
+interface ValidatedRowUpsert {
+  languageId: string;
+  thresholdValue: number;
+  count: number;
+  collectedAt: string;
+}
+
+// Each row is validated against the payload contract in isolation so the batch
+// can be rejected up-front with the offending language_id/threshold_value — the
+// D1 batch below has no per-row diagnostics.
+function validateRowUpsertEntry(entry: unknown, index: number): ValidatedRowUpsert {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new HttpError(
+      400,
+      "invalid_row",
+      `rows[${index}] must be a JSON object.`,
+      { index },
+    );
+  }
+
+  const raw = entry as Record<string, unknown>;
+  const languageId = raw.language_id;
+  if (typeof languageId !== "string" || languageId.trim() === "") {
+    throw new HttpError(
+      400,
+      "invalid_language_id",
+      `rows[${index}].language_id must be a non-empty string.`,
+      { index },
+    );
+  }
+
+  const thresholdValue = raw.threshold_value;
+  if (!Number.isInteger(thresholdValue) || (thresholdValue as number) < 0) {
+    throw new HttpError(
+      400,
+      "invalid_threshold_value",
+      `rows[${index}].threshold_value must be a non-negative integer.`,
+      { index, language_id: languageId },
+    );
+  }
+
+  const count = raw.count;
+  if (!Number.isInteger(count) || (count as number) < 0) {
+    throw new HttpError(
+      400,
+      "invalid_count",
+      `rows[${index}].count must be a non-negative integer.`,
+      { index, language_id: languageId, threshold_value: thresholdValue },
+    );
+  }
+
+  let collectedAt: string;
+  try {
+    collectedAt = assertUtcTimestamp(raw.collected_at, `rows[${index}].collected_at`);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      "invalid_collected_at",
+      error instanceof Error ? error.message : "Invalid collected_at.",
+      { index, language_id: languageId, threshold_value: thresholdValue },
+    );
+  }
+
+  return {
+    languageId,
+    thresholdValue: thresholdValue as number,
+    count: count as number,
+    collectedAt,
+  };
+}
+
+export async function upsertQualityRunRows(
   context: RequestContext,
   runId: string,
-  languageId: string,
-  thresholdValueSegment: string,
   payload: Record<string, unknown>,
 ): Promise<QualityRunRecord> {
-  const thresholdValue = validateThresholdValue(thresholdValueSegment);
-  const count = asNonNegativeInteger(payload.count, "count");
-  const collectedAt = asBadRequest("invalid_collected_at", () =>
-    assertUtcTimestamp(payload.collected_at, "collected_at"),
-  );
+  const rawRows = payload.rows;
+  if (!Array.isArray(rawRows)) {
+    throw new HttpError(400, "invalid_rows", "rows must be a JSON array.");
+  }
+
+  if (rawRows.length === 0) {
+    throw new HttpError(400, "empty_rows", "rows must not be empty.");
+  }
+
+  if (rawRows.length > MAX_BATCH_ROWS) {
+    throw new HttpError(
+      413,
+      "batch_too_large",
+      `rows must contain at most ${MAX_BATCH_ROWS} entries.`,
+      { max_rows: MAX_BATCH_ROWS, received_rows: rawRows.length },
+    );
+  }
+
+  const rows = rawRows.map((entry, index) => validateRowUpsertEntry(entry, index));
   const nowIso = context.runtime.now().toISOString();
   const database = context.env.DB;
 
@@ -430,47 +500,57 @@ export async function upsertQualityRunRow(
     throw new HttpError(
       409,
       "run_expired",
-      "The run lease expired before the row write completed.",
+      "The run lease expired before the row batch completed.",
       { run_id: runId },
     );
   }
 
-  const language = findLanguageById(context.runtime.registry, languageId);
-  if (language === undefined) {
-    throw new HttpError(400, "unknown_language", "language_id is not present in the registry.", {
-      language_id: languageId,
-    });
+  // Registry validation happens against the observed_date of the existing run.
+  // Per-row failures abort the whole batch (batch semantics: no partial writes),
+  // so the offending dimension is surfaced in the HttpError details.
+  for (const row of rows) {
+    const language = findLanguageById(context.runtime.registry, row.languageId);
+    if (language === undefined) {
+      throw new HttpError(400, "unknown_language", "language_id is not present in the registry.", {
+        language_id: row.languageId,
+      });
+    }
+
+    const threshold = findThresholdByValue(context.runtime.registry, row.thresholdValue);
+    if (threshold === undefined) {
+      throw new HttpError(
+        400,
+        "unknown_threshold",
+        "threshold_value is not present in the registry.",
+        { threshold_value: row.thresholdValue },
+      );
+    }
+
+    if (!isEntryActiveOnDate(existingRun.observed_date, language.active_from, language.active_to)) {
+      throw new HttpError(
+        409,
+        "language_inactive_for_observed_date",
+        "language_id is not active for the run's observed_date.",
+        { language_id: row.languageId, observed_date: existingRun.observed_date },
+      );
+    }
+
+    if (!isEntryActiveOnDate(existingRun.observed_date, threshold.active_from, threshold.active_to)) {
+      throw new HttpError(
+        409,
+        "threshold_inactive_for_observed_date",
+        "threshold_value is not active for the run's observed_date.",
+        { threshold_value: row.thresholdValue, observed_date: existingRun.observed_date },
+      );
+    }
   }
 
-  const threshold = findThresholdByValue(context.runtime.registry, thresholdValue);
-  if (threshold === undefined) {
-    throw new HttpError(
-      400,
-      "unknown_threshold",
-      "threshold_value is not present in the registry.",
-      { threshold_value: thresholdValue },
-    );
-  }
-
-  if (!isEntryActiveOnDate(existingRun.observed_date, language.active_from, language.active_to)) {
-    throw new HttpError(
-      409,
-      "language_inactive_for_observed_date",
-      "language_id is not active for the run's observed_date.",
-      { language_id: languageId, observed_date: existingRun.observed_date },
-    );
-  }
-
-  if (!isEntryActiveOnDate(existingRun.observed_date, threshold.active_from, threshold.active_to)) {
-    throw new HttpError(
-      409,
-      "threshold_inactive_for_observed_date",
-      "threshold_value is not active for the run's observed_date.",
-      { threshold_value: thresholdValue, observed_date: existingRun.observed_date },
-    );
-  }
-
-  await database.batch([
+  // D1 caps a single prepared statement at 100 bind parameters, so the batch is
+  // built as N separate INSERTs (7 binds each: 5 business columns plus 2 for
+  // the `WHERE EXISTS` lease guard — status + nowIso) rather than one
+  // multi-VALUES statement. database.batch([...]) still wraps the whole
+  // sequence in a single transaction, preserving all-or-nothing semantics.
+  const statements = rows.map((row) =>
     database
       .prepare(
         `INSERT INTO quality_30d_run_rows (
@@ -493,7 +573,18 @@ export async function upsertQualityRunRow(
           count = excluded.count,
           collected_at = excluded.collected_at`,
       )
-      .bind(runId, languageId, thresholdValue, count, collectedAt, RUN_STATUSES.running, nowIso),
+      .bind(
+        runId,
+        row.languageId,
+        row.thresholdValue,
+        row.count,
+        row.collectedAt,
+        RUN_STATUSES.running,
+        nowIso,
+      ),
+  );
+
+  statements.push(
     database
       .prepare(
         `UPDATE quality_30d_runs
@@ -507,7 +598,9 @@ export async function upsertQualityRunRow(
           AND lease_expires_at > ?3`,
       )
       .bind(runId, RUN_STATUSES.running, nowIso),
-  ]);
+  );
+
+  await database.batch(statements);
 
   const updatedRun = await readRun(database, runId);
   assertKnownRun(updatedRun, runId);
@@ -524,7 +617,7 @@ export async function upsertQualityRunRow(
     throw new HttpError(
       409,
       "run_expired",
-      "The run lease expired before the row write completed.",
+      "The run lease expired before the row batch completed.",
       { run_id: runId },
     );
   }

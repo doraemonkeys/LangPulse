@@ -99,92 +99,6 @@ func TestExecuteRunsCollectorPipeline(t *testing.T) {
 	}
 }
 
-func TestResolveSettingsRequiresServiceCredentials(t *testing.T) {
-	_, err := resolveSettings(nil, func(string) string { return "" }, time.Now().UTC())
-	if err == nil {
-		t.Fatal("resolveSettings() error = nil, want missing credential error")
-	}
-
-	for _, snippet := range []string{
-		envGitHubToken + " is required",
-		envIngestBaseURL + " is required",
-		envIngestToken + " is required",
-	} {
-		if !strings.Contains(err.Error(), snippet) {
-			t.Fatalf("resolveSettings() error = %q, want substring %q", err, snippet)
-		}
-	}
-}
-
-func TestResolveSettingsUsesEnvDefaultsAndConfigDiscovery(t *testing.T) {
-	tempDir := t.TempDir()
-	configDir := filepath.Join(tempDir, "config")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-
-	configPath := filepath.Join(configDir, "metrics.json")
-	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	previousWorkingDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if restoreErr := os.Chdir(previousWorkingDirectory); restoreErr != nil {
-			t.Fatalf("restore working directory: %v", restoreErr)
-		}
-	})
-
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("Chdir() error = %v", err)
-	}
-
-	now := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
-	environment := map[string]string{
-		envObservedDate:  "2026-04-07",
-		envGitHubToken:   "github-secret",
-		envGitHubBaseURL: "https://github.example",
-		envIngestBaseURL: "https://ingest.example",
-		envIngestToken:   "ingest-secret",
-	}
-
-	options, err := resolveSettings([]string{"-github-api-base-url", "https://override.example"}, func(key string) string {
-		return environment[key]
-	}, now)
-	if err != nil {
-		t.Fatalf("resolveSettings() error = %v", err)
-	}
-
-	if options.ConfigPath != filepath.Clean("config/metrics.json") {
-		t.Fatalf("ConfigPath = %q, want discovered config path", options.ConfigPath)
-	}
-
-	if options.GitHubBaseURL != "https://override.example" {
-		t.Fatalf("GitHubBaseURL = %q, want flag override", options.GitHubBaseURL)
-	}
-
-	if options.ObservedDate.String() != "2026-04-07" {
-		t.Fatalf("ObservedDate = %s, want 2026-04-07", options.ObservedDate)
-	}
-}
-
-func TestResolveConfigPathPrefersExplicitEnvironment(t *testing.T) {
-	path := resolveConfigPath(func(key string) string {
-		if key == envConfigPath {
-			return "/tmp/custom.json"
-		}
-
-		return ""
-	})
-
-	if path != "/tmp/custom.json" {
-		t.Fatalf("resolveConfigPath() = %q, want custom path", path)
-	}
-}
-
 func TestRunMainWritesErrorsAndExitCode(t *testing.T) {
 	var stdout strings.Builder
 	var stderr strings.Builder
@@ -366,40 +280,6 @@ func TestExecuteReturnsCollectorError(t *testing.T) {
 	}
 }
 
-func TestResolveSettingsRejectsInvalidInputs(t *testing.T) {
-	_, err := resolveSettings([]string{"-observed-date", "2026/04/07"}, func(key string) string {
-		switch key {
-		case envGitHubToken:
-			return "github-secret"
-		case envIngestBaseURL:
-			return "https://ingest.example"
-		case envIngestToken:
-			return "ingest-secret"
-		default:
-			return ""
-		}
-	}, time.Now().UTC())
-	if err == nil || !strings.Contains(err.Error(), "parse UTC date") {
-		t.Fatalf("resolveSettings(invalid observed date) error = %v, want date parse error", err)
-	}
-
-	_, err = resolveSettings([]string{"-unknown-flag"}, func(key string) string {
-		switch key {
-		case envGitHubToken:
-			return "github-secret"
-		case envIngestBaseURL:
-			return "https://ingest.example"
-		case envIngestToken:
-			return "ingest-secret"
-		default:
-			return ""
-		}
-	}, time.Now().UTC())
-	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
-		t.Fatalf("resolveSettings(invalid flag) error = %v, want flag parse error", err)
-	}
-}
-
 func TestRunWithSettingsReturnsClientConstructionErrors(t *testing.T) {
 	configPath := writeMetricsConfig(t, time.Now().UTC())
 	observedDate := mustObservedDate(t, time.Now().UTC().Format("2006-01-02"))
@@ -423,6 +303,51 @@ func TestRunWithSettingsReturnsClientConstructionErrors(t *testing.T) {
 	}, &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "ingest base URL is required") {
 		t.Fatalf("runWithSettings(missing ingest base URL) error = %v, want ingest client error", err)
+	}
+}
+
+// TestRunWithSettingsAppliesRateLimitAndConcurrency covers the branch that
+// actually threads the CLI's rpm/burst/concurrency into github.WithRateLimit
+// and quality.WithConcurrency. A regression here is invisible from the
+// resolveSettings unit tests (which only validate parsing, not wiring).
+func TestRunWithSettingsAppliesRateLimitAndConcurrency(t *testing.T) {
+	now := time.Now().UTC()
+	configPath := writeMetricsConfig(t, now)
+	observedDate := now.Format("2006-01-02")
+
+	githubServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(`{"total_count":1,"incomplete_results":false}`))
+	}))
+	defer githubServer.Close()
+
+	publishedAt := now.Add(time.Minute)
+	ingestServer := newIngestRunServer(t, ingestRunFixture{
+		RunID:          "run-tuned",
+		ObservedAt:     now,
+		FinalStatus:    quality.FinalStatusComplete,
+		PublishedAt:    &publishedAt,
+		AllowRowUpsert: true,
+	})
+	defer ingestServer.Close()
+
+	var stdout strings.Builder
+	err := runWithSettings(context.Background(), settings{
+		ConfigPath:              configPath,
+		ObservedDate:            mustObservedDate(t, observedDate),
+		GitHubToken:             "github-secret",
+		GitHubBaseURL:           githubServer.URL,
+		IngestBaseURL:           ingestServer.URL,
+		IngestToken:             "ingest-secret",
+		GitHubRequestsPerMinute: 600, // 10 req/sec: fast enough not to stall the test
+		GitHubRequestBurst:      5,
+		Concurrency:             2,
+	}, &stdout)
+	if err != nil {
+		t.Fatalf("runWithSettings() error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "run_id=run-tuned") {
+		t.Fatalf("stdout = %q, want tuned run summary", stdout.String())
 	}
 }
 
@@ -488,17 +413,24 @@ func newIngestRunServer(t *testing.T, fixture ingestRunFixture) *httptest.Server
 		finalizePayload["published_at"] = fixture.PublishedAt.UTC().Format(time.RFC3339)
 	}
 
+	// The runner now writes via the Google AIP-style batch endpoint rather
+	// than the per-row path, so the fixture accepts a single rows:batch call
+	// and echoes the heartbeat-shaped run payload the collector expects.
+	rowsBatchPayload := map[string]any{
+		"run": encodeIngestRun(fixture.RunID, "running", observedAt, observedAt.Add(20*time.Minute)),
+	}
+
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/internal/quality-runs":
 			mustEncodeJSONPayload(t, writer, createPayload, "create")
 		case "/internal/quality-runs/" + fixture.RunID + "/heartbeat":
 			mustEncodeJSONPayload(t, writer, heartbeatPayload, "heartbeat")
-		case "/internal/quality-runs/" + fixture.RunID + "/rows/go/0":
+		case "/internal/quality-runs/" + fixture.RunID + "/rows:batch":
 			if !fixture.AllowRowUpsert {
 				t.Fatalf("unexpected path %q", request.URL.Path)
 			}
-			writer.WriteHeader(http.StatusNoContent)
+			mustEncodeJSONPayload(t, writer, rowsBatchPayload, "rows:batch")
 		case "/internal/quality-runs/" + fixture.RunID + "/finalize":
 			mustEncodeJSONPayload(t, writer, finalizePayload, "finalize")
 		default:

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -152,28 +151,49 @@ func (c *Client) HeartbeatRun(ctx context.Context, runID string) (heartbeat qual
 	return heartbeat, nil
 }
 
-func (c *Client) UpsertRow(ctx context.Context, row quality.RowUpsert) (err error) {
-	path := strings.Join([]string{
-		"/internal/quality-runs",
-		url.PathEscape(row.RunID),
-		"rows",
-		url.PathEscape(row.LanguageID),
-		strconv.Itoa(row.ThresholdValue),
-	}, "/")
+// UpsertRows writes a full batch of row upserts for a single run to the
+// Worker's batch endpoint. The plan moves row writes out of the collector hot
+// loop: a per-row RTT inside the GitHub rate-limit window was the dominant
+// wall-clock cost, so the runner collects every (language, threshold) count
+// first and calls this once at end-of-run.
+//
+// Rows must belong to a single run — run_id travels in the path. Mixing run_ids
+// in a single batch would silently cross-contaminate server-side bookkeeping
+// (actual_rows, lease check), so we reject such payloads here instead of
+// relying on the Worker to notice.
+func (c *Client) UpsertRows(ctx context.Context, rows []quality.RowUpsert) (err error) {
+	if len(rows) == 0 {
+		return errors.New("upsert rows requires at least one row")
+	}
 
-	response, err := c.sendJSON(ctx, http.MethodPut, path, map[string]any{
-		"count":        row.Count,
-		"collected_at": row.CollectedAt.UTC().Format(time.RFC3339),
+	runID := rows[0].RunID
+	payloadRows := make([]map[string]any, len(rows))
+	for index, row := range rows {
+		if row.RunID != runID {
+			return fmt.Errorf("upsert rows: mixed run_id in batch (row %d = %q, want %q)", index, row.RunID, runID)
+		}
+
+		payloadRows[index] = map[string]any{
+			"language_id":     row.LanguageID,
+			"threshold_value": row.ThresholdValue,
+			"count":           row.Count,
+			"collected_at":    row.CollectedAt.UTC().Format(time.RFC3339),
+		}
+	}
+
+	path := "/internal/quality-runs/" + url.PathEscape(runID) + "/rows:batch"
+	response, err := c.sendJSON(ctx, http.MethodPost, path, map[string]any{
+		"rows": payloadRows,
 	})
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = errjoin.Join(err, "close upsert row response body", response.Body.Close)
+		err = errjoin.Join(err, "close upsert rows response body", response.Body.Close)
 	}()
 
 	if _, err := io.Copy(io.Discard, response.Body); err != nil {
-		return fmt.Errorf("drain upsert row response: %w", err)
+		return fmt.Errorf("drain upsert rows response: %w", err)
 	}
 
 	return nil

@@ -111,9 +111,6 @@ async function runLifecycleSmoke(options) {
   const createTemplate =
     process.env.LANGPULSE_SMOKE_CREATE_BODY_JSON ??
     '{"observed_date":"{{OBSERVED_DATE}}","expected_rows":{{EXPECTED_ROWS}}}';
-  const rowTemplate =
-    process.env.LANGPULSE_SMOKE_ROW_BODY_JSON ??
-    '{"count":123,"collected_at":"{{COLLECTED_AT}}"}';
   const finalizeTemplate =
     process.env.LANGPULSE_SMOKE_FINALIZE_BODY_JSON ?? '{"status":"complete"}';
 
@@ -141,31 +138,38 @@ async function runLifecycleSmoke(options) {
     );
   }
 
-  for (const [index, activeLanguage] of activeLanguages.entries()) {
-    for (const [thresholdIndex, activeThreshold] of activeThresholds.entries()) {
-      const rowUrl = fillUrlTemplate(
-        process.env.LANGPULSE_SMOKE_ROW_PATH_TEMPLATE ??
-          "/internal/quality-runs/{{RUN_ID}}/rows/{{LANGUAGE_ID}}/{{THRESHOLD_VALUE}}",
-        ensureTrailingSlash(options.baseUrl),
-        {
-          RUN_ID: secondRun.runId,
-          LANGUAGE_ID: activeLanguage.id,
-          THRESHOLD_VALUE: `${activeThreshold.value}`,
-        },
-      );
-      await requestJsonOrText(rowUrl, {
-        method: "PUT",
-        headers,
-        body: fillTemplate(rowTemplate, {
-          RUN_ID: secondRun.runId,
-          LANGUAGE_ID: activeLanguage.id,
-          THRESHOLD_VALUE: `${activeThreshold.value}`,
-          OBSERVED_DATE: observedDate,
-          COLLECTED_AT: new Date().toISOString(),
-          COUNT: `${123 + index + thresholdIndex}`,
-        }),
-      });
-    }
+  // Single batch write replaces the prior per-row PUT loop: the worker now
+  // only exposes POST /internal/quality-runs/:id/rows:batch, so the smoke
+  // script must aggregate every language x threshold pair into one payload.
+  const collectedAt = new Date().toISOString();
+  const batchRows = activeLanguages.flatMap((activeLanguage, index) =>
+    activeThresholds.map((activeThreshold, thresholdIndex) => ({
+      language_id: activeLanguage.id,
+      threshold_value: activeThreshold.value,
+      count: 123 + index + thresholdIndex,
+      collected_at: collectedAt,
+    })),
+  );
+
+  const batchUrl = fillUrlTemplate(
+    process.env.LANGPULSE_SMOKE_ROWS_BATCH_PATH_TEMPLATE ??
+      "/internal/quality-runs/{{RUN_ID}}/rows:batch",
+    ensureTrailingSlash(options.baseUrl),
+    { RUN_ID: secondRun.runId },
+  );
+  const batchResponse = await requestJsonOrText(batchUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ rows: batchRows }),
+  });
+
+  // The batch endpoint returns qualityRunResponse(run); surface a mismatch
+  // early so a regression on the response contract fails the smoke suite.
+  const batchRunId = extractString(batchResponse.body, ["run_id", "runId", "id"]);
+  if (batchRunId && batchRunId !== secondRun.runId) {
+    throw new Error(
+      `Batch row upsert response run_id ${batchRunId} did not match request run_id ${secondRun.runId}`,
+    );
   }
 
   const finalizeUrl = fillUrlTemplate(

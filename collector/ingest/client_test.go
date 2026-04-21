@@ -66,15 +66,24 @@ func TestClientRoundTripsLifecycleRequests(t *testing.T) {
 				},
 			}, "heartbeat")
 
-		case "/internal/quality-runs/run%2F1/rows/go%2Flang/10":
-			if request.Method != http.MethodPut {
-				t.Fatalf("row method = %s, want PUT", request.Method)
+		case "/internal/quality-runs/run%2F1/rows:batch":
+			if request.Method != http.MethodPost {
+				t.Fatalf("batch method = %s, want POST", request.Method)
 			}
 
-			payload := mustDecodeJSONMap(t, request.Body, "row")
+			payload := mustDecodeJSONMap(t, request.Body, "rows:batch")
 
-			if int(payload["count"].(float64)) != 55 || payload["collected_at"] == "" {
-				t.Fatalf("row payload = %#v, want count and collected_at", payload)
+			rows, ok := payload["rows"].([]any)
+			if !ok || len(rows) != 1 {
+				t.Fatalf("rows payload = %#v, want one row", payload["rows"])
+			}
+
+			row := rows[0].(map[string]any)
+			if row["language_id"] != "go/lang" || int(row["threshold_value"].(float64)) != 10 {
+				t.Fatalf("row identifier = %#v, want language=go/lang threshold=10", row)
+			}
+			if int(row["count"].(float64)) != 55 || row["collected_at"] == "" {
+				t.Fatalf("row payload = %#v, want count and collected_at", row)
 			}
 
 			mustEncodeJSONMap(t, writer, map[string]any{
@@ -86,7 +95,7 @@ func TestClientRoundTripsLifecycleRequests(t *testing.T) {
 					"lease_expires_at": now.Add(20 * time.Minute).Format(time.RFC3339),
 					"actual_rows":      1,
 				},
-			}, "row")
+			}, "rows:batch")
 
 		case "/internal/quality-runs/run%2F1/finalize":
 			payload := mustDecodeJSONMap(t, request.Body, "finalize")
@@ -138,14 +147,14 @@ func TestClientRoundTripsLifecycleRequests(t *testing.T) {
 		t.Fatalf("HeartbeatRun() lease = %v, want later than %v", heartbeat.LeaseExpiresAt, createdRun.LeaseExpiresAt)
 	}
 
-	if err := client.UpsertRow(context.Background(), quality.RowUpsert{
+	if err := client.UpsertRows(context.Background(), []quality.RowUpsert{{
 		RunID:          createdRun.RunID,
 		LanguageID:     "go/lang",
 		ThresholdValue: 10,
 		Count:          55,
 		CollectedAt:    now,
-	}); err != nil {
-		t.Fatalf("UpsertRow() error = %v", err)
+	}}); err != nil {
+		t.Fatalf("UpsertRows() error = %v", err)
 	}
 
 	finalized, err := client.FinalizeRun(context.Background(), quality.FinalizeRequest{
@@ -304,42 +313,6 @@ func TestCreateRunAndFinalizeRejectMalformedTimestamps(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "parse finalize published_at") {
 		t.Fatalf("FinalizeRun() error = %v, want published_at parse error", err)
-	}
-}
-
-func TestHeartbeatRunAndSendJSONErrorPaths(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/internal/quality-runs/run-1/heartbeat":
-			_, _ = writer.Write([]byte(`{"run":{"run_id":"run-1","attempt_no":1,"status":"running","observed_at":"2026-04-07T10:00:00Z","lease_expires_at":"invalid"}}`))
-		case "/internal/quality-runs/run-1/rows/go/0":
-			writer.WriteHeader(http.StatusInternalServerError)
-			_, _ = writer.Write([]byte(`temporary failure`))
-		default:
-			t.Fatalf("unexpected path %q", request.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient(server.URL, "secret", WithHTTPClient(server.Client()))
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-
-	_, err = client.HeartbeatRun(context.Background(), "run-1")
-	if err == nil || !strings.Contains(err.Error(), "parse heartbeat lease_expires_at") {
-		t.Fatalf("HeartbeatRun() error = %v, want malformed timestamp error", err)
-	}
-
-	err = client.UpsertRow(context.Background(), quality.RowUpsert{
-		RunID:          "run-1",
-		LanguageID:     "go",
-		ThresholdValue: 0,
-		Count:          1,
-		CollectedAt:    time.Now().UTC(),
-	})
-	if err == nil || !strings.Contains(err.Error(), "temporary failure") {
-		t.Fatalf("UpsertRow() error = %v, want sendJSON API error", err)
 	}
 }
 
