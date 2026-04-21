@@ -1,171 +1,114 @@
 # LangPulse
 
-LangPulse 是一个面向公开 GitHub 仓库的单数据集产品。它每天采集一次语言质量快照，并通过 Cloudflare Worker API 与前端页面对外提供只读查询。
+LangPulse publishes one thing: a daily UTC-day snapshot of how many public GitHub repositories in each programming language have been active recently, broken down by star-count threshold.
 
-当前产品只发布一个指标：
+## What the number actually measures
 
-- `quality_30d_snapshot`
-  含义：在 UTC 日期 `D`，按语言 `L` 和 star 阈值 `T` 统计「最近 30 天内有 push、当前 stars 大于等于阈值、主语言匹配、公开可见」的 GitHub 仓库数量
+For every published UTC date `D`, every active language `L`, and every active star threshold `T`, LangPulse stores a single integer: the total count returned by a GitHub repository-search query equivalent to
 
-## 产品边界
-
-- 时区固定为 `UTC`
-- 只从 `launch_date` 开始采集，不做历史回填
-- 公开 API 只暴露已发布快照
-- 成功发布后的 `observed_date` 不可变
-- 时间序列允许稀疏，不补零
-- 配置是 append-only：历史语言和阈值不会被复用或删除
-
-## 仓库结构
-
-```text
-.
-├─ collector/          Go 采集器，调用 GitHub Search 和内部 ingest API
-├─ worker/             Cloudflare Worker，负责 ingest、发布和公开读取
-├─ web/                前端页面，展示单张质量趋势图
-├─ config/             指标维度配置，当前使用 metrics.json
-├─ migrations/         D1 / SQLite schema
-├─ .github/workflows/  校验、部署、日采集工作流
-├─ docs/history_plan/  实施计划与产品契约
-├─ go.mod              根模块，作为仓库级 Go 工作区锚点
-└─ go.work             Go workspace
+```
+language:"<L>" is:public pushed:>=D-29 stars:>=T
 ```
 
-## 架构概览
+Concretely:
 
-1. `collector` 在当天 UTC 日期内发起 GitHub Search 查询。
-2. 采集结果不直写 D1，而是写入 `worker` 的内部 ingest API。
-3. `worker` 负责 run 生命周期、row upsert、finalize 发布和公开读取。
-4. `web` 从 `/api/metadata`、`/api/quality`、`/api/quality/latest` 读取数据并绘图。
-5. GitHub Actions 负责验证、部署和每日采集。
+- The window is always 30 days, inclusive of the observed date (`D-29 .. D`).
+- `pushed:>=` reflects any push activity on any branch. It is a proxy for "this repo has seen human touch recently," not a direct quality signal.
+- `threshold = 0` drops the `stars:` qualifier entirely, so it counts *every* recently-pushed public repo in that language.
+- `language:"..."` uses GitHub's own Linguist classification, not file extensions.
+- `github_query_fragment` in `config/metrics.json` is the source of truth for each language's query spelling. Two spellings of the same language would need two different `language.id`s — the ID is a contract.
 
-## API 概览
+So one row in the dataset answers: *on date `D`, how many public repos classified as language `L` had at least `T` stars and were pushed to within the last 30 days?*
 
-公开接口：
+## Architecture at a glance
 
-- `GET /api/metadata`
-- `GET /api/quality?language=<id>&from=<yyyy-mm-dd>&to=<yyyy-mm-dd>`
-- `GET /api/quality/latest`
-- `GET /api/health`
-
-内部 ingest 接口：
-
-- `POST /internal/quality-runs`
-- `POST /internal/quality-runs/{run_id}/heartbeat`
-- `PUT /internal/quality-runs/{run_id}/rows/{language_id}/{threshold_value}`
-- `POST /internal/quality-runs/{run_id}/finalize`
-
-## 本地开发前置
-
-- Go `1.26`
-- Node.js `22`
-- npm
-- GNU Make
-- Bash 兼容 shell
-- Rust / Cargo
-- 如需跑真实 Worker / D1 部署链路，需要 Cloudflare 账号与对应凭据
-
-## 常用命令
-
-```bash
-make ci
+```
+┌──────────────┐      HTTP + Bearer      ┌────────────────────┐
+│  collector/  │ ───────────────────────▶│   worker/  (CF)    │
+│  Go, daily   │   /internal/quality-*   │  D1: runs, rows,   │
+│  via Actions │                         │       publications │
+└──────┬───────┘                         └─────────┬──────────┘
+       │ GitHub Search API                         │ same-origin
+       ▼                                           ▼
+┌──────────────┐                         ┌────────────────────┐
+│  GitHub      │                         │    web/  (React)   │
+│              │                         │  static assets     │
+└──────────────┘                         └────────────────────┘
 ```
 
-首次本地运行前需要安装 `sloc-guard`：
+A single Cloudflare Worker serves both the public API and the static frontend. The collector runs daily at `00:15 UTC` via GitHub Actions, queries GitHub Search in parallel under a shared rate limiter, and hands the entire result set to the Worker's internal ingest endpoint in one atomic batch.
 
-```bash
-cargo install sloc-guard
+
+## Repository layout
+
+```
+collector/                  Go collector
+  cmd/collect-quality/      executable entry point
+  github/                   Search client with shared rate limiter
+  ingest/                   internal ingest API client (batch upsert)
+  quality/                  run orchestration, lease, query construction
+worker/                     Cloudflare Worker (src/index.ts is a pure router)
+  src/routes/               public route handlers
+  src/routes/internal/      run lifecycle: create, heartbeat, rows:batch, finalize
+  src/quality-runs.ts       run lifecycle core (lease, upsert, publish)
+  src/public-quality.ts     public read queries
+  src/config-registry.ts    metrics.json loader and activation filter
+web/                        React 19 + @tanstack/react-query dashboard
+config/metrics.json         languages, thresholds, activation windows
+migrations/0001_init.sql    D1 schema: runs, run_rows, publications
+docs/                       PROJECT_OVERVIEW, DEPLOY, clarifications, history_plan
+.github/                    validate, deploy, collect-quality workflows + scripts
 ```
 
-运行采集器时需要的关键环境变量：
+For a file-level entry-point map and "where to start for common changes," see [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md).
 
-- `GITHUB_TOKEN`
-- `LANGPULSE_INGEST_BASE_URL`
-- `LANGPULSE_INGEST_TOKEN`
-- 可选：`LANGPULSE_CONFIG_PATH`
-- 可选：`LANGPULSE_OBSERVED_DATE`
-- 可选：`GITHUB_API_BASE_URL`
+## Public API
 
-示例：
+All endpoints are same-origin on the deployed Worker. Responses are JSON; dates are UTC `YYYY-MM-DD`.
 
-```bash
-go run ./collector/cmd/collect-quality
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Pings D1. Rate-limited per client IP. |
+| `GET` | `/api/metadata` | Registry projection: active languages, thresholds, `launch_date`, `window_days`. |
+| `GET` | `/api/quality/latest` | `{ observed_date }` of the most recently published snapshot, or `null`. |
+| `GET` | `/api/quality/snapshot?date=YYYY-MM-DD&threshold=N` | Ranked language counts for the given date + threshold, plus the previous *published* date's counts so the frontend can render deltas. |
+| `GET` | `/api/quality/compare?languages=a,b,c&threshold=N&from=...&to=...` | Time-series counts for a small set of languages over a date window. |
+
+Internal endpoints under `/internal/quality-runs/*` are Bearer-auth only and used exclusively by the collector. Their payload contracts live in `worker/src/quality-runs.ts` and the corresponding route handlers.
+
+## Data model
+
+Three tables in Cloudflare D1 (full schema in `migrations/0001_init.sql`):
+
+- **`quality_30d_runs`** — every attempt, with `status ∈ {running, failed, expired, complete}`, lease bookkeeping, and `(observed_date, attempt_no)` unique. A partial unique index ensures at most one `running` row per date.
+- **`quality_30d_run_rows`** — one integer per `(run_id, language_id, threshold_value)`.
+- **`quality_30d_publications`** — the immutable pointer from `observed_date` to the winning `run_id`. Public reads always join through this table, so failed or expired attempts are invisible externally but remain for auditability.
+
+## Local development
+
+Requires Go, Node 22+, and [sloc-guard](https://crates.io/crates/sloc-guard) (`cargo install sloc-guard`).
+
+```
+make setup       # install Node deps for worker + web
+make ci          # full validation: Go tests (90% coverage floor), worker/web check/coverage/build/lint, scripts tests, sloc-guard
+make verify      # same as ci but without the setup step
 ```
 
-采集器会自动优先读取仓库中的 `config/metrics.json`。
+Targeted subsets:
 
-## 配置
+```
+make collector-test
+make worker-check worker-coverage
+make web-check web-coverage
+```
 
-指标维度定义位于 [config/metrics.json](config/metrics.json)。
+## Deployment
 
-它包含：
+Production runs on a single Cloudflare Worker with a D1 binding. D1 databases are **not** created by the deploy workflow — they must exist first and their IDs must be wired into GitHub Variables. The end-to-end first-time checklist (Cloudflare setup, GitHub Variables/Secrets, first deploy, first collection, verification URLs) lives in [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
-- `timezone`
-- `window_days`
-- `launch_date`
-- `languages`
-- `thresholds`
+## Further reading
 
-其中：
-
-- `language.id` 是公开稳定标识
-- `label` 只用于展示
-- `github_query_fragment` 只用于采集器查询，并且必须是完整的 GitHub 搜索片段
-- `active_from` / `active_to` 只影响未来采集，不隐藏已发布历史
-
-## 数据库
-
-迁移文件位于 [migrations/0001_init.sql](migrations/0001_init.sql)。
-
-核心表：
-
-- `quality_30d_runs`
-- `quality_30d_run_rows`
-- `quality_30d_publications`
-
-该设计把「采集尝试」「单行结果」「公开发布」明确分离，便于：
-
-- 处理同一天的重试
-- 记录失败与过期尝试
-- 保证公开数据不可变
-
-## CI / CD
-
-工作流：
-
-- [validate.yml](.github/workflows/validate.yml)
-  在 PR 和手动触发时运行，校验 Go、Worker、Web，并强制 90% 覆盖率门槛
-- [collect-quality.yml](.github/workflows/collect-quality.yml)
-  构建并执行当日采集，必要时输出 D1 诊断信息
-- [deploy.yml](.github/workflows/deploy.yml)
-  渲染环境化 Wrangler 配置、应用 migration、构建前端静态资源、部署同源 Worker、再执行 smoke
-
-Wrangler 配置模板在 [worker/wrangler.toml](worker/wrangler.toml)，真实环境配置由 CI 在部署时通过 [render-wrangler-config.mjs](.github/scripts/render-wrangler-config.mjs) 渲染生成。
-
-## 部署所需 GitHub 配置
-
-常见 `vars`：
-
-- `LANGPULSE_API_BASE_URL`
-- `LANGPULSE_INGEST_BASE_URL`
-- `LANGPULSE_D1_DATABASE`
-- `LANGPULSE_D1_DATABASE_ID`
-- `LANGPULSE_SMOKE_D1_DATABASE`
-- `LANGPULSE_SMOKE_D1_DATABASE_ID`
-
-常见 `secrets`：
-
-- `LANGPULSE_GITHUB_API_TOKEN`
-- `LANGPULSE_INGEST_AUTH_TOKEN`
-- `LANGPULSE_SMOKE_INTERNAL_AUTH_TOKEN`
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-## 当前验证基线
-
-本仓库当前要求并已接入 CI 的校验基线：
-
-- 根目录 `make ci`
-- Worker 类型检查、覆盖率校验、构建
-- Web 类型检查、覆盖率校验、构建
-- 覆盖率门槛 `90%`
+- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) — file-level entry points and "where to start for common changes."
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — full first-time deployment and operations checklist.
+- [`docs/clarifications/`](docs/clarifications/) — recorded design decisions (CORS stance, hosting/config contract, sloc-guard validation rationale).
+- [`docs/history_plan/`](docs/history_plan/) — archived implementation plans, including the collector throughput refactor.

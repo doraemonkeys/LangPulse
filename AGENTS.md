@@ -8,7 +8,7 @@
 
 Repo root:
 
-```bash
+```powershell
 make ci
 ```
 
