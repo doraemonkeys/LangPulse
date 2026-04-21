@@ -8,7 +8,7 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className="icon-button"
       aria-label={label}
       aria-pressed={state.theme === "dark"}
       onClick={() => dispatch({ type: "set_theme", theme: nextTheme })}

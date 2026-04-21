@@ -22,4 +22,18 @@ describe("AppHeader", () => {
     );
     expect(screen.getByLabelText("Latest observed UTC date").textContent).toContain("\u2014");
   });
+
+  it("exposes a GitHub repository link that opens safely in a new tab", () => {
+    render(
+      <DashboardProvider>
+        <AppHeader observedDate="2026-04-10" windowDays={30} />
+      </DashboardProvider>,
+    );
+    const link = screen.getByRole("link", { name: /github/i });
+    expect(link).toHaveAttribute("href", "https://github.com/doraemonkeys/LangPulse");
+    expect(link).toHaveAttribute("target", "_blank");
+    const rel = link.getAttribute("rel") ?? "";
+    expect(rel).toContain("noopener");
+    expect(rel).toContain("noreferrer");
+  });
 });
