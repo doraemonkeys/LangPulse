@@ -21,11 +21,6 @@ describe("date utils", () => {
     expect(clampDate("2026-04-15", "2026-04-01")).toBe("2026-04-15");
   });
 
-  it("returns launch-only range when no latest observed date is available", () => {
-    const result = computeDefaultRange("2026-04-01", null);
-    expect(result).toEqual({ from: "2026-04-01", to: "2026-04-01" });
-  });
-
   it("caps the default range at the launch date", () => {
     const result = computeDefaultRange("2026-04-01", "2026-04-03", 90);
     expect(result.from).toBe("2026-04-01");
@@ -46,9 +41,6 @@ describe("date utils", () => {
 
     const custom = computePresetRange("custom", "2026-04-01", "2026-04-20");
     expect(custom.preset).toBe("custom");
-
-    const noData = computePresetRange("90d", "2026-04-01", null);
-    expect(noData).toEqual({ from: "2026-04-01", to: "2026-04-01", preset: "90d" });
   });
 
   it("formats short date strings", () => {

@@ -10,7 +10,7 @@ import {
 interface DateRangePickerProps {
   range: DashboardRange;
   launchDate: string;
-  latestObservedDate: string | null;
+  latestObservedDate: string;
   onChange: (range: DashboardRange) => void;
 }
 
@@ -38,10 +38,9 @@ export function DateRangePicker({
   }
 
   function handleToChange(event: React.ChangeEvent<HTMLInputElement>): void {
-    const maxAllowed = latestObservedDate ?? event.target.value;
     const candidate =
-      latestObservedDate !== null && compareDates(event.target.value, latestObservedDate) > 0
-        ? maxAllowed
+      compareDates(event.target.value, latestObservedDate) > 0
+        ? latestObservedDate
         : event.target.value;
     const to = compareDates(candidate, range.from) < 0 ? range.from : candidate;
     onChange({ from: range.from, to, preset: "custom" });
@@ -68,7 +67,7 @@ export function DateRangePicker({
           type="date"
           value={range.from}
           min={launchDate}
-          max={latestObservedDate ?? undefined}
+          max={latestObservedDate}
           onChange={handleFromChange}
         />
       </label>
@@ -78,7 +77,7 @@ export function DateRangePicker({
           type="date"
           value={range.to}
           min={launchDate}
-          max={latestObservedDate ?? undefined}
+          max={latestObservedDate}
           onChange={handleToChange}
         />
       </label>

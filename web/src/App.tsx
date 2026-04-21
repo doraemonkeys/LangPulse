@@ -30,6 +30,9 @@ function useDashboardBootstrap(launchDate: string | undefined, latestObservedDat
 
   useEffect(() => {
     if (launchDate === undefined) return;
+    // Defer until /latest resolves; otherwise we'd stamp a placeholder range
+    // and the `from !== ""` gate below would then lock it in forever.
+    if (latestObservedDate === null) return;
     if (state.range.from !== "" && state.range.to !== "") return;
     dispatch({
       type: "set_range",
@@ -116,7 +119,7 @@ export function App() {
           observedDate={latestObservedDate}
           onChange={(threshold) => dispatch({ type: "set_threshold", threshold })}
         />
-        {launchDate !== undefined ? (
+        {launchDate !== undefined && latestObservedDate !== null ? (
           <DateRangePicker
             range={state.range}
             launchDate={launchDate}

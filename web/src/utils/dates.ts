@@ -17,15 +17,15 @@ export function clampDate(candidate: string, launchDate: string): string {
   return compareDates(candidate, launchDate) < 0 ? launchDate : candidate;
 }
 
+// Precondition: callers must only compute a range once a snapshot has been
+// observed. A null latestObservedDate means "no data yet" — there is no
+// meaningful window to derive, so the UI must defer initialization rather
+// than synthesize a placeholder range that collapses to a single day.
 export function computeDefaultRange(
   launchDate: string,
-  latestObservedDate: string | null,
+  latestObservedDate: string,
   windowDays = DEFAULT_RANGE_DAYS,
 ): { from: string; to: string } {
-  if (latestObservedDate === null) {
-    return { from: launchDate, to: launchDate };
-  }
-
   const candidateFrom = addDaysUtc(latestObservedDate, -(windowDays - 1));
   return {
     from: clampDate(candidateFrom, launchDate),
@@ -36,12 +36,8 @@ export function computeDefaultRange(
 export function computePresetRange(
   preset: RangePreset,
   launchDate: string,
-  latestObservedDate: string | null,
+  latestObservedDate: string,
 ): { from: string; to: string; preset: RangePreset } {
-  if (latestObservedDate === null) {
-    return { from: launchDate, to: launchDate, preset };
-  }
-
   if (preset === "max") {
     return { from: launchDate, to: latestObservedDate, preset };
   }
