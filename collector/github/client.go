@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -83,6 +84,11 @@ type Client struct {
 	// most one worker ahead, which bounds the blast radius.
 	limiter  *rate.Limiter
 	interval time.Duration
+	// logger emits retry + rate-limit diagnostics. Defaults to a discard
+	// handler so tests stay silent; the CLI wires in a stderr logger so
+	// operators watching CI logs can see 429s and backoff durations in real
+	// time instead of only on final failure.
+	logger *slog.Logger
 }
 
 type Option func(*Client)
@@ -112,6 +118,7 @@ func NewClient(token string, options ...Option) (*Client, error) {
 		maxAttempts: defaultMaxAttempts,
 		baseBackoff: defaultBaseBackoff,
 		maxBackoff:  defaultMaxBackoff,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
 	for _, option := range options {
@@ -181,6 +188,18 @@ func WithRetryPolicy(maxAttempts int, baseBackoff time.Duration, maxBackoff time
 	}
 }
 
+// WithLogger injects a structured logger for retry + rate-limit diagnostics.
+// Passing nil is a no-op so callers can forward an optional logger without
+// defensive branching. The discard default in NewClient guarantees Client
+// methods never panic when the option is omitted.
+func WithLogger(logger *slog.Logger) Option {
+	return func(client *Client) {
+		if logger != nil {
+			client.logger = logger
+		}
+	}
+}
+
 // WithRateLimit injects an externally constructed limiter. Typical production
 // wiring is rate.NewLimiter(rate.Every(2*time.Second), 1) for 30 req/min.
 // Passing rate.NewLimiter(rate.Inf, 1) disables pacing, which tests rely on.
@@ -215,6 +234,15 @@ func (c *Client) CountRepositories(ctx context.Context, observedDate quality.Day
 		if !ok {
 			return 0, fmt.Errorf("%w: %w", quality.ErrRetryWindowClosed, err)
 		}
+
+		c.logger.Warn(
+			"github retry scheduled",
+			slog.Int("attempt", attempt),
+			slog.Int("max_attempts", c.maxAttempts),
+			slog.Duration("delay", delay),
+			slog.String("observed_date", observedDate.String()),
+			slog.String("error", err.Error()),
+		)
 
 		if err := c.sleep(ctx, delay); err != nil {
 			return 0, fmt.Errorf("sleep before github retry: %w", err)
@@ -337,6 +365,22 @@ func (c *Client) applyRateLimitHeaders(headers http.Header) {
 			break
 		}
 	}
+
+	// Warn mirrors the retry-scheduled log's level: both events explain an
+	// otherwise-silent multi-second stall, so an incident responder filtering
+	// on level=warn should catch either signal without a second query.
+	//
+	// planned_reservations (vs. a counter of actually-executed ReserveN calls)
+	// is intentional: when ReserveN returns !OK the loop bails early, so the
+	// field advertises the intended pause magnitude rather than masking a
+	// degenerate burst with a partial count.
+	c.logger.Warn(
+		"github rate limit near exhaustion",
+		slog.Int("remaining", remaining),
+		slog.Time("reset_at", resetAt),
+		slog.Duration("gap", gap),
+		slog.Int("planned_reservations", reservations),
+	)
 }
 
 // intervalFromLimit inverts rate.Every so SetLimitAt can restore pacing after

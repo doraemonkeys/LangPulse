@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -94,6 +96,10 @@ type Runner struct {
 	ingest      RunIngestor
 	clock       Clock
 	workerCount int
+	// logger emits run-level progress. Defaults to a discard handler so tests
+	// stay silent; the CLI injects a stderr logger so a 90-minute run produces
+	// visible progress in CI instead of going dark between start and summary.
+	logger *slog.Logger
 }
 
 // Option mutates a Runner during construction. Functional options keep
@@ -111,6 +117,18 @@ func WithConcurrency(workerCount int) Option {
 			return
 		}
 		runner.workerCount = workerCount
+	}
+}
+
+// WithLogger injects a structured logger for run-level progress. Passing nil
+// is a no-op so callers can forward an optional logger without defensive
+// branching; the discard default in NewRunner guarantees Runner methods never
+// panic when the option is omitted.
+func WithLogger(logger *slog.Logger) Option {
+	return func(runner *Runner) {
+		if logger != nil {
+			runner.logger = logger
+		}
 	}
 }
 
@@ -135,6 +153,7 @@ func NewRunner(search RepositoryCounter, ingest RunIngestor, clock Clock, option
 		ingest:      ingest,
 		clock:       clock,
 		workerCount: DefaultWorkerConcurrency,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
 	for _, option := range options {
@@ -156,13 +175,24 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 	activeLanguages := registry.ActiveLanguages(observedDate)
 	activeThresholds := registry.ActiveThresholds(observedDate)
 
+	expectedRows := len(activeLanguages) * len(activeThresholds)
 	createdRun, err := r.ingest.CreateRun(ctx, CreateRunRequest{
 		ObservedDate: observedDate,
-		ExpectedRows: len(activeLanguages) * len(activeThresholds),
+		ExpectedRows: expectedRows,
 	})
 	if err != nil {
 		return RunResult{}, fmt.Errorf("create ingest run: %w", err)
 	}
+
+	r.logger.Info(
+		"collector run started",
+		slog.String("run_id", createdRun.RunID),
+		slog.Int("attempt_no", createdRun.AttemptNo),
+		slog.String("observed_date", observedDate.String()),
+		slog.Int("languages", len(activeLanguages)),
+		slog.Int("thresholds", len(activeThresholds)),
+		slog.Int("expected_rows", expectedRows),
+	)
 
 	// workCtx scopes the repository-count + row-upsert calls so the lease
 	// goroutine can abort them the moment a real heartbeat failure is observed,
@@ -256,6 +286,17 @@ func (r Runner) Run(ctx context.Context, registry Config, observedDate Day) (res
 	}
 
 	result.PublishedAt = finalized.PublishedAt
+
+	finalizeAttrs := []any{
+		slog.String("run_id", createdRun.RunID),
+		slog.String("status", string(finalized.Status)),
+		slog.Int("rows_written", result.RowsWritten),
+	}
+	if finalized.PublishedAt != nil {
+		finalizeAttrs = append(finalizeAttrs, slog.Time("published_at", *finalized.PublishedAt))
+	}
+	r.logger.Info("collector run finalized", finalizeAttrs...)
+
 	return result, nil
 }
 
@@ -302,8 +343,11 @@ func (r Runner) collectRows(
 	group.SetLimit(r.workerCount)
 
 	var (
-		rowsMu sync.Mutex
-		rows   = make([]RowUpsert, 0, len(tasks))
+		rowsMu     sync.Mutex
+		rows       = make([]RowUpsert, 0, len(tasks))
+		progressMu sync.Mutex
+		completed  int
+		totalTasks = len(tasks)
 	)
 
 	for _, task := range tasks {
@@ -325,6 +369,26 @@ func (r Runner) collectRows(
 				CollectedAt:    r.clock.Now().UTC(),
 			})
 			rowsMu.Unlock()
+
+			// progressMu scopes the counter bump AND the log emit together so
+			// a tailing operator sees strictly monotonic completed=N lines.
+			// An atomic.Add alone would uniquify the value but let goroutines
+			// race on stderr, producing 5-after-6 ordering that looks like a
+			// dropped event during triage. The mutex cost is dwarfed by the
+			// GitHub HTTP call above, so the ordering guarantee is effectively
+			// free.
+			progressMu.Lock()
+			completed++
+			r.logger.Info(
+				"collector task completed",
+				slog.String("run_id", runID),
+				slog.String("language", task.language.ID),
+				slog.Int("threshold", task.threshold.Value),
+				slog.Int("count", count),
+				slog.Int("completed", completed),
+				slog.Int("total", totalTasks),
+			)
+			progressMu.Unlock()
 			return nil
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,7 +55,11 @@ func runMain(
 	stdout io.Writer,
 	stderr io.Writer,
 ) int {
-	if err := execute(ctx, args, getenv, stdout); err != nil {
+	// stderr owns both error messages and structured progress logs. Keeping
+	// logs off stdout preserves the "stdout is the summary contract" promise
+	// callers rely on to parse run_id/rows lines.
+	logger := slog.New(slog.NewTextHandler(stderr, nil))
+	if err := execute(ctx, args, getenv, stdout, logger); err != nil {
 		if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
 			return 1
 		}
@@ -64,22 +69,25 @@ func runMain(
 	return 0
 }
 
-func execute(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer) error {
+func execute(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer, logger *slog.Logger) error {
 	options, err := resolveSettings(args, getenv, time.Now().UTC())
 	if err != nil {
 		return err
 	}
 
-	return runWithSettings(ctx, options, stdout)
+	return runWithSettings(ctx, options, stdout, logger)
 }
 
-func runWithSettings(ctx context.Context, options settings, stdout io.Writer) error {
+func runWithSettings(ctx context.Context, options settings, stdout io.Writer, logger *slog.Logger) error {
 	registry, err := quality.LoadConfigFile(options.ConfigPath)
 	if err != nil {
 		return err
 	}
 
-	githubOptions := []github.Option{github.WithBaseURL(options.GitHubBaseURL)}
+	githubOptions := []github.Option{
+		github.WithBaseURL(options.GitHubBaseURL),
+		github.WithLogger(logger.With(slog.String("component", "github"))),
+	}
 	// rpm==0 or burst==0 means "trust github.NewClient's built-in defaults".
 	// Only build a limiter when operators explicitly tuned at least one knob,
 	// so there's exactly one place that owns the default pacing value.
@@ -98,7 +106,9 @@ func runWithSettings(ctx context.Context, options settings, stdout io.Writer) er
 		return err
 	}
 
-	runnerOptions := []quality.Option{}
+	runnerOptions := []quality.Option{
+		quality.WithLogger(logger.With(slog.String("component", "runner"))),
+	}
 	if options.Concurrency > 0 {
 		runnerOptions = append(runnerOptions, quality.WithConcurrency(options.Concurrency))
 	}

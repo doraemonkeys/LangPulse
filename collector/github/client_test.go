@@ -1,9 +1,11 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -601,6 +603,114 @@ func TestIntervalFromLimitHandlesSentinels(t *testing.T) {
 
 	if got := intervalFromLimit(0); got != 0 {
 		t.Fatalf("intervalFromLimit(0) = %s, want 0", got)
+	}
+}
+
+// TestCountRepositoriesLogsRetryOn429 proves operators watching CI logs can
+// see why the collector is pausing. The log line carries the clamped delay,
+// the attempt number, and the upstream status code so a 429 is distinguishable
+// from a 5xx at a glance.
+func TestCountRepositoriesLogsRetryOn429(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		attempts++
+		if attempts == 1 {
+			writer.Header().Set("Retry-After", "2")
+			writer.WriteHeader(http.StatusTooManyRequests)
+			_, _ = writer.Write([]byte(`{"message":"slow down"}`))
+			return
+		}
+
+		if err := json.NewEncoder(writer).Encode(map[string]any{
+			"total_count":        4,
+			"incomplete_results": false,
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	client, err := NewClient(
+		"token",
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+		WithClock(stubClock{now: time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)}),
+		WithSleep(func(context.Context, time.Duration) error { return nil }),
+		WithRetryPolicy(2, time.Second, 10*time.Second),
+		WithRateLimit(unlimited()),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if _, err := client.CountRepositories(context.Background(), mustDay(t, "2026-04-07"), "language:go"); err != nil {
+		t.Fatalf("CountRepositories() error = %v", err)
+	}
+
+	got := logBuf.String()
+	for _, want := range []string{
+		`msg="github retry scheduled"`,
+		"attempt=1",
+		"max_attempts=2",
+		"delay=2s",
+		"status 429",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestApplyRateLimitHeadersLogsNearExhaustion guards the operator-visible
+// warning that the pacer has stalled every worker until the next reset window.
+// Without this log line the stall is invisible and looks like a hang.
+func TestApplyRateLimitHeadersLogsNearExhaustion(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	resetAt := time.Date(2026, 4, 7, 12, 0, 30, 0, time.UTC)
+	client := &Client{
+		limiter:  rate.NewLimiter(rate.Every(2*time.Second), 1),
+		interval: 2 * time.Second,
+		clock:    stubClock{now: time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)},
+		logger:   logger,
+	}
+
+	headers := http.Header{
+		"X-Ratelimit-Resource":  []string{"search"},
+		"X-Ratelimit-Remaining": []string{"1"},
+		"X-Ratelimit-Reset":     []string{strconv.FormatInt(resetAt.Unix(), 10)},
+	}
+	client.applyRateLimitHeaders(headers)
+
+	got := logBuf.String()
+	for _, want := range []string{
+		`level=WARN`,
+		`msg="github rate limit near exhaustion"`,
+		"remaining=1",
+		"planned_reservations=",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestWithLoggerNilIsNoOp guards the option against accidental nil loggers.
+// Passing nil must leave the discard default in place so Client methods never
+// panic on log calls.
+func TestWithLoggerNilIsNoOp(t *testing.T) {
+	client, err := NewClient("token", WithLogger(nil))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.logger == nil {
+		t.Fatal("NewClient(WithLogger(nil)) dropped the discard default logger")
 	}
 }
 

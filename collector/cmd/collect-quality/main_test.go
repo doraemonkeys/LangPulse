@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,13 @@ import (
 
 	"github.com/langpulse/collector/quality"
 )
+
+// discardLogger returns a slog.Logger that drops every record. Tests that
+// exercise the execute/runWithSettings pipeline without asserting on log
+// output use it so progress/retry lines don't leak into assertion buffers.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 type failingWriter struct{}
 
@@ -89,6 +98,7 @@ func TestExecuteRunsCollectorPipeline(t *testing.T) {
 		[]string{"-config", configPath, "-observed-date", observedDate},
 		func(key string) string { return environment[key] },
 		&output,
+		discardLogger(),
 	)
 	if err != nil {
 		t.Fatalf("execute() error = %v", err)
@@ -141,13 +151,19 @@ func TestExecuteReturnsConfigLoadError(t *testing.T) {
 			}
 		},
 		&strings.Builder{},
+		discardLogger(),
 	)
 	if err == nil || !strings.Contains(err.Error(), "open metrics config") {
 		t.Fatalf("execute() error = %v, want config load error", err)
 	}
 }
 
-func TestRunMainReturnsSuccessAndNoStderr(t *testing.T) {
+// TestRunMainReturnsSuccessAndEmitsRunLogs proves the CLI still succeeds while
+// emitting structured progress on stderr. stderr is deliberately NOT empty on
+// the happy path — slog INFO records document run start, per-task completion,
+// and finalize so a 90-minute CI step shows continuous progress instead of
+// going dark between startup and the terminal summary line.
+func TestRunMainReturnsSuccessAndEmitsRunLogs(t *testing.T) {
 	today := time.Now().UTC()
 	observedDate := today.Format("2006-01-02")
 	launchDate := today.AddDate(0, 0, -7).Format("2006-01-02")
@@ -209,8 +225,21 @@ func TestRunMainReturnsSuccessAndNoStderr(t *testing.T) {
 		t.Fatalf("runMain() = %d, want %d", code, 0)
 	}
 
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty stderr", stderr.String())
+	stderrOut := stderr.String()
+	for _, want := range []string{
+		"collector run started",
+		"collector task completed",
+		"collector run finalized",
+	} {
+		if !strings.Contains(stderrOut, want) {
+			t.Fatalf("stderr = %q, want it to contain %q", stderrOut, want)
+		}
+	}
+
+	// The summary contract lives on stdout: log lines belong on stderr, so
+	// stdout must remain exactly the parseable "run_id=... rows=..." line.
+	if strings.Contains(stdout.String(), "level=INFO") {
+		t.Fatalf("stdout = %q, want no log records leaked onto stdout", stdout.String())
 	}
 
 	if !strings.Contains(stdout.String(), "run_id=run-main") {
@@ -274,6 +303,7 @@ func TestExecuteReturnsCollectorError(t *testing.T) {
 			}
 		},
 		&strings.Builder{},
+		discardLogger(),
 	)
 	if err == nil || !strings.Contains(err.Error(), "incomplete results") {
 		t.Fatalf("execute() error = %v, want collector error", err)
@@ -290,7 +320,7 @@ func TestRunWithSettingsReturnsClientConstructionErrors(t *testing.T) {
 		GitHubToken:   "",
 		IngestBaseURL: "https://ingest.example",
 		IngestToken:   "ingest-secret",
-	}, &strings.Builder{})
+	}, &strings.Builder{}, discardLogger())
 	if err == nil || !strings.Contains(err.Error(), "github token is required") {
 		t.Fatalf("runWithSettings(missing github token) error = %v, want github client error", err)
 	}
@@ -300,7 +330,7 @@ func TestRunWithSettingsReturnsClientConstructionErrors(t *testing.T) {
 		ObservedDate: observedDate,
 		GitHubToken:  "github-secret",
 		IngestToken:  "ingest-secret",
-	}, &strings.Builder{})
+	}, &strings.Builder{}, discardLogger())
 	if err == nil || !strings.Contains(err.Error(), "ingest base URL is required") {
 		t.Fatalf("runWithSettings(missing ingest base URL) error = %v, want ingest client error", err)
 	}
@@ -341,7 +371,7 @@ func TestRunWithSettingsAppliesRateLimitAndConcurrency(t *testing.T) {
 		GitHubRequestsPerMinute: 600, // 10 req/sec: fast enough not to stall the test
 		GitHubRequestBurst:      5,
 		Concurrency:             2,
-	}, &stdout)
+	}, &stdout, discardLogger())
 	if err != nil {
 		t.Fatalf("runWithSettings() error = %v", err)
 	}
@@ -378,7 +408,7 @@ func TestRunWithSettingsReturnsWriterError(t *testing.T) {
 		GitHubBaseURL: githubServer.URL,
 		IngestBaseURL: ingestServer.URL,
 		IngestToken:   "ingest-secret",
-	}, failingWriter{})
+	}, failingWriter{}, discardLogger())
 	if err == nil || !strings.Contains(err.Error(), "write collector summary") {
 		t.Fatalf("runWithSettings(writer failure) error = %v, want writer error", err)
 	}

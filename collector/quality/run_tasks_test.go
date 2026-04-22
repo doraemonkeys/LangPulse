@@ -1,8 +1,11 @@
 package quality
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -172,6 +175,99 @@ func TestRunnerRunWritesAllRowsInSingleBatch(t *testing.T) {
 
 	if result.RowsWritten != expectedRows {
 		t.Fatalf("RowsWritten = %d, want %d", result.RowsWritten, expectedRows)
+	}
+}
+
+// TestRunnerEmitsProgressLogs proves the runner produces a progress line per
+// completed (language, threshold) pair plus run_start and run_finalized
+// bookends. Operators rely on these lines to see that a 90-minute CI step is
+// actually advancing instead of stuck, so regressing them silently would hide
+// real failures behind a green spinner.
+func TestRunnerEmitsProgressLogs(t *testing.T) {
+	now := time.Date(2026, 4, 7, 16, 0, 0, 0, time.UTC)
+	registry := loadRunnerConfig(t, 0, 10)
+	observedDate := mustParseDay(t, "2026-04-07")
+
+	counts := map[string]int{}
+	for _, threshold := range registry.Thresholds {
+		query := BuildSearchQuery(registry.WindowDays, registry.Languages[0], threshold, observedDate)
+		counts[query] = 42 + threshold.Value
+	}
+
+	search := &fakeSearch{counts: counts}
+	publishedAt := now.Add(time.Minute)
+	ingest := &fakeIngest{
+		createResult: CreatedRun{
+			RunID:          "run-progress",
+			AttemptNo:      1,
+			ObservedAt:     now,
+			LeaseExpiresAt: now.Add(5 * time.Minute),
+		},
+		heartbeatResult: HeartbeatResult{LeaseExpiresAt: now.Add(10 * time.Minute)},
+		finalizeResult: FinalizeResult{
+			Status:      FinalStatusComplete,
+			PublishedAt: &publishedAt,
+		},
+	}
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	runner, err := NewRunner(search, ingest, stubClock{now: now}, WithLogger(logger), WithConcurrency(1))
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	if _, err := runner.Run(context.Background(), registry, observedDate); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	total := len(registry.Languages) * len(registry.Thresholds)
+	got := logBuf.String()
+
+	wantStart := []string{
+		`msg="collector run started"`,
+		"run_id=run-progress",
+		"attempt_no=1",
+		fmt.Sprintf("expected_rows=%d", total),
+	}
+	for _, want := range wantStart {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log output = %q, want start line to contain %q", got, want)
+		}
+	}
+
+	if taskLines := strings.Count(got, `msg="collector task completed"`); taskLines != total {
+		t.Fatalf("task progress lines = %d, want %d", taskLines, total)
+	}
+
+	wantProgress := []string{
+		"language=go",
+		fmt.Sprintf("completed=%d", total),
+		fmt.Sprintf("total=%d", total),
+	}
+	for _, want := range wantProgress {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log output = %q, want progress line to contain %q", got, want)
+		}
+	}
+
+	if !strings.Contains(got, `msg="collector run finalized"`) {
+		t.Fatalf("log output = %q, want run finalized line", got)
+	}
+}
+
+// TestWithLoggerNilIsNoOp guards the option against accidental nil loggers.
+// The discard default must survive a nil injection so Runner methods never
+// panic on log calls.
+func TestWithLoggerNilIsNoOp(t *testing.T) {
+	runner, err := NewRunner(&fakeSearch{}, &fakeIngest{}, stubClock{}, WithLogger(nil))
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+
+	if runner.logger == nil {
+		t.Fatal("NewRunner(WithLogger(nil)) dropped the discard default logger")
 	}
 }
 
