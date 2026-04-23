@@ -39,11 +39,16 @@ const (
 	rateLimitResourceSearch = "search"
 )
 
-// DefaultRequestsPerMinute mirrors GitHub's public search-API allowance for
-// authenticated users (documented at 30 req/min). Exported so the CLI layer
-// can reuse the same fallback when constructing an external limiter, keeping
-// exactly one source of truth for the default pacing value.
-const DefaultRequestsPerMinute = 30
+// DefaultRequestsPerMinute sits 10% below GitHub's documented 30 req/min
+// search allowance. Pacing exactly at the ceiling reliably tripped 403s in
+// production: GitHub's sliding window does not align with our 2s cadence, so
+// window tails routinely left remaining=1–2 with a multi-second gap to reset,
+// and the cooperative pause could not retract reservations already parked on
+// the shared limiter. The extra headroom lets those tails drain without
+// overshoot. Exported so the CLI layer can reuse the same fallback when
+// constructing an external limiter, keeping exactly one source of truth for
+// the default pacing value.
+const DefaultRequestsPerMinute = 27
 
 // DefaultRequestBurst is the default burst size paired with
 // DefaultRequestsPerMinute. burst=1 keeps pacing monotonic in the default
