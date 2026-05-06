@@ -25,4 +25,23 @@ describe("LanguageLegend", () => {
     await user.click(screen.getByRole("button", { name: /Rust/ }));
     expect(onToggle).toHaveBeenCalledWith("rust");
   });
+
+  it("marks chips whose language has no relative-mode baseline as unavailable", () => {
+    render(
+      <LanguageLegend
+        languages={[
+          { id: "go", label: "Go" },
+          { id: "nascent", label: "Nascent" },
+        ]}
+        palette={new Map([["go", "#E69F00"], ["nascent", "#56B4E9"]])}
+        pinnedLanguages={new Set()}
+        onToggle={() => {}}
+        unavailableByLanguage={new Map([["nascent", "zero_baseline"]])}
+      />,
+    );
+    const nascent = screen.getByRole("button", { name: /Nascent.*Baseline is zero/ });
+    expect(nascent).toHaveClass("legend-chip--unavailable");
+    expect(nascent).toHaveAttribute("title", "Baseline is zero — no relative change to show");
+    expect(screen.getByRole("button", { name: /^Go/ })).not.toHaveClass("legend-chip--unavailable");
+  });
 });

@@ -2,6 +2,13 @@ import type { RangePreset } from "../utils/dates";
 
 export type ThemeMode = "light" | "dark";
 
+// "absolute" preserves raw counts so the chart answers "who's bigger"; "relative"
+// rebases each language to its own first valid sample so small-but-meaningful
+// fluctuations are not flattened by a larger language's scale. The mode is
+// user-visible chart semantics, so it lives in dashboard state rather than as
+// component-local state.
+export type ChartMode = "absolute" | "relative";
+
 export interface DashboardRange {
   from: string;
   to: string;
@@ -15,6 +22,7 @@ export interface DashboardState {
   observedDate: string | null;
   launchDate: string | null;
   theme: ThemeMode;
+  chartMode: ChartMode;
 }
 
 export type DashboardAction =
@@ -24,7 +32,8 @@ export type DashboardAction =
   | { type: "reset_pins" }
   | { type: "set_observed_date"; observedDate: string | null }
   | { type: "set_launch_date"; launchDate: string }
-  | { type: "set_theme"; theme: ThemeMode };
+  | { type: "set_theme"; theme: ThemeMode }
+  | { type: "set_chart_mode"; mode: ChartMode };
 
 export function dashboardReducer(state: DashboardState, action: DashboardAction): DashboardState {
   if (action.type === "set_threshold") {
@@ -58,7 +67,12 @@ export function dashboardReducer(state: DashboardState, action: DashboardAction)
     return { ...state, launchDate: action.launchDate };
   }
 
-  return { ...state, theme: action.theme };
+  if (action.type === "set_theme") {
+    return { ...state, theme: action.theme };
+  }
+
+  if (state.chartMode === action.mode) return state;
+  return { ...state, chartMode: action.mode };
 }
 
 export const DEFAULT_THRESHOLD = 2;
@@ -66,6 +80,8 @@ export const DEFAULT_THRESHOLD = 2;
 // Mirrors the worker's MAX_COMPARE_LANGUAGES cap in worker/src/constants.ts so
 // UI-gated pinning never produces a compare request the server will reject.
 export const MAX_PINNED_LANGUAGES = 20;
+
+export const DEFAULT_CHART_MODE: ChartMode = "absolute";
 
 export function createInitialState(theme: ThemeMode): DashboardState {
   return {
@@ -75,5 +91,6 @@ export function createInitialState(theme: ThemeMode): DashboardState {
     observedDate: null,
     launchDate: null,
     theme,
+    chartMode: DEFAULT_CHART_MODE,
   };
 }

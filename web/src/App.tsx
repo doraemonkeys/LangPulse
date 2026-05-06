@@ -197,6 +197,8 @@ export function App() {
           theme={state.theme}
           pinnedLanguages={state.pinnedLanguages}
           onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
+          chartMode={state.chartMode}
+          onChangeChartMode={(mode) => dispatch({ type: "set_chart_mode", mode })}
         />
       </section>
     </div>

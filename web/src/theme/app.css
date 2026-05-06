@@ -508,6 +508,12 @@ body {
   width: 100%;
 }
 
+.comparison__toolbar {
+  display: inline-flex;
+  align-self: flex-end;
+  gap: 6px;
+}
+
 .comparison__skeleton {
   height: 360px;
   display: grid;
@@ -544,10 +550,17 @@ body {
 
 .chart-tooltip__item {
   display: grid;
-  grid-template-columns: 10px 1fr auto;
+  grid-template-columns: 10px 1fr auto auto;
   gap: 8px;
   align-items: center;
   font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip__secondary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  min-width: 48px;
+  text-align: right;
 }
 
 .chart-tooltip__swatch {
@@ -589,6 +602,15 @@ body {
 .legend-chip--pinned {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--ink);
+}
+
+.legend-chip--unavailable {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.legend-chip--unavailable .legend-chip__swatch {
+  filter: grayscale(0.7);
 }
 
 .legend-chip__swatch {
