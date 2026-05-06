@@ -3,15 +3,21 @@ import { AppHeader } from "./components/AppHeader";
 import { ComparisonChart } from "./components/ComparisonChart";
 import { DateRangePicker } from "./components/DateRangePicker";
 import { Leaderboard, LEADERBOARD_SIZE } from "./components/Leaderboard";
+import { SnapshotDatePicker } from "./components/SnapshotDatePicker";
 import { StateBanner } from "./components/StateBanner";
 import { ThresholdChips } from "./components/ThresholdChips";
 import { useCompare } from "./hooks/useCompare";
 import { useLatest } from "./hooks/useLatest";
 import { useMetadata } from "./hooks/useMetadata";
 import { useSnapshot } from "./hooks/useSnapshot";
-import { MAX_PINNED_LANGUAGES } from "./state/actions";
+import { MAX_PINNED_LANGUAGES, type DashboardRange } from "./state/actions";
 import { useDashboard } from "./state/DashboardProvider";
-import { addDaysUtc, computePresetRange, SPARKLINE_RANGE_DAYS } from "./utils/dates";
+import {
+  addDaysUtc,
+  compareDates,
+  computePresetRange,
+  SPARKLINE_RANGE_DAYS,
+} from "./utils/dates";
 
 function useDashboardBootstrap(launchDate: string | undefined, latestObservedDate: string | null): void {
   const { state, dispatch } = useDashboard();
@@ -23,7 +29,10 @@ function useDashboardBootstrap(launchDate: string | undefined, latestObservedDat
   }, [launchDate, state.launchDate, dispatch]);
 
   useEffect(() => {
-    if (state.observedDate !== latestObservedDate) {
+    // Seed once when the first /latest response arrives. Re-fetches that
+    // surface a newer date must NOT clobber a user-selected snapshot — that's
+    // what the explicit "Latest" affordance in SnapshotDatePicker is for.
+    if (state.observedDate === null && latestObservedDate !== null) {
       dispatch({ type: "set_observed_date", observedDate: latestObservedDate });
     }
   }, [latestObservedDate, state.observedDate, dispatch]);
@@ -39,6 +48,22 @@ function useDashboardBootstrap(launchDate: string | undefined, latestObservedDat
       range: computePresetRange("90d", launchDate, latestObservedDate),
     });
   }, [launchDate, latestObservedDate, state.range.from, state.range.to, dispatch]);
+}
+
+// Snapshot date drives the chart's right edge so the trend line always ends
+// at the day the leaderboard is showing. For non-custom presets we recompute
+// `from` off the preset; for custom ranges we keep `from` (clamped) and just
+// snap `to` to the new snapshot date.
+function reanchorRange(
+  range: DashboardRange,
+  launchDate: string,
+  newAnchor: string,
+): DashboardRange {
+  if (range.preset !== "custom") {
+    return { ...computePresetRange(range.preset, launchDate, newAnchor), preset: range.preset };
+  }
+  const from = compareDates(range.from, newAnchor) > 0 ? newAnchor : range.from;
+  return { from, to: newAnchor, preset: "custom" };
 }
 
 export function App() {
@@ -105,6 +130,17 @@ export function App() {
     );
   }
 
+  function handleSnapshotChange(date: string): void {
+    dispatch({ type: "set_observed_date", observedDate: date });
+    if (launchDate !== undefined) {
+      dispatch({ type: "set_range", range: reanchorRange(state.range, launchDate, date) });
+    }
+  }
+
+  function handleJumpToLatest(): void {
+    if (latestObservedDate !== null) handleSnapshotChange(latestObservedDate);
+  }
+
   return (
     <div className="app-shell">
       <AppHeader
@@ -116,15 +152,15 @@ export function App() {
         <ThresholdChips
           thresholds={metadataQuery.data?.thresholds ?? []}
           activeThreshold={state.threshold}
-          observedDate={latestObservedDate}
+          observedDate={state.observedDate}
           onChange={(threshold) => dispatch({ type: "set_threshold", threshold })}
         />
-        {launchDate !== undefined && latestObservedDate !== null ? (
-          <DateRangePicker
-            range={state.range}
+        {launchDate !== undefined && latestObservedDate !== null && state.observedDate !== null ? (
+          <SnapshotDatePicker
+            value={state.observedDate}
             launchDate={launchDate}
             latestObservedDate={latestObservedDate}
-            onChange={(range) => dispatch({ type: "set_range", range })}
+            onChange={handleSnapshotChange}
           />
         ) : null}
       </section>
@@ -139,17 +175,30 @@ export function App() {
         onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
         onResetPins={() => dispatch({ type: "reset_pins" })}
         registryLanguages={metadataQuery.data?.languages ?? []}
-        observedDate={latestObservedDate}
+        observedDate={state.observedDate}
+        latestObservedDate={latestObservedDate}
+        onJumpToLatest={handleJumpToLatest}
       />
 
-      <ComparisonChart
-        data={chartQuery.data}
-        isLoading={chartQuery.isLoading}
-        error={chartQuery.error as Error | null}
-        theme={state.theme}
-        pinnedLanguages={state.pinnedLanguages}
-        onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
-      />
+      <section className="chart-card" aria-label="Trend comparison">
+        {launchDate !== undefined && latestObservedDate !== null && state.observedDate !== null ? (
+          <DateRangePicker
+            range={state.range}
+            launchDate={launchDate}
+            latestObservedDate={latestObservedDate}
+            anchorDate={state.observedDate}
+            onChange={(range) => dispatch({ type: "set_range", range })}
+          />
+        ) : null}
+        <ComparisonChart
+          data={chartQuery.data}
+          isLoading={chartQuery.isLoading}
+          error={chartQuery.error as Error | null}
+          theme={state.theme}
+          pinnedLanguages={state.pinnedLanguages}
+          onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
+        />
+      </section>
     </div>
   );
 }

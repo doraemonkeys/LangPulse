@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { LanguagePicker } from "./LanguagePicker";
 import { LeaderboardRow } from "./LeaderboardRow";
 import { StateBanner } from "./StateBanner";
+import { ApiError } from "../api/client";
 import type { CompareResponse, PublicLanguage, SnapshotResponse } from "../api/types";
 import { getPaletteForIds, type ThemeMode } from "../charts/palette";
 import { MAX_PINNED_LANGUAGES } from "../state/actions";
@@ -19,6 +20,8 @@ interface LeaderboardProps {
   onResetPins: () => void;
   registryLanguages: PublicLanguage[];
   observedDate: string | null;
+  latestObservedDate: string | null;
+  onJumpToLatest: () => void;
 }
 
 interface SparklinePoint {
@@ -49,6 +52,8 @@ export function Leaderboard(props: LeaderboardProps) {
     onResetPins,
     registryLanguages,
     observedDate,
+    latestObservedDate,
+    onJumpToLatest,
   } = props;
   const [expanded, setExpanded] = useState(false);
 
@@ -68,6 +73,28 @@ export function Leaderboard(props: LeaderboardProps) {
   const atCap = pinnedLanguages.size >= MAX_PINNED_LANGUAGES;
 
   if (error !== null) {
+    // Sparse-day case: the worker returns 404 for an unpublished date. Surface
+    // it as info (not an error) and offer a one-click jump back to the
+    // latest published snapshot. A jump target only exists once /latest has
+    // resolved at least one date.
+    if (error instanceof ApiError && error.status === 404 && latestObservedDate !== null) {
+      const description =
+        observedDate === null
+          ? `Jump to the most recent published snapshot (${latestObservedDate}).`
+          : `No publication exists for ${observedDate}. Jump to the most recent (${latestObservedDate}).`;
+      return (
+        <StateBanner
+          tone="info"
+          title="No snapshot for this date"
+          description={description}
+          action={
+            <button type="button" className="ghost-button" onClick={onJumpToLatest}>
+              Jump to latest
+            </button>
+          }
+        />
+      );
+    }
     return (
       <StateBanner
         tone="error"

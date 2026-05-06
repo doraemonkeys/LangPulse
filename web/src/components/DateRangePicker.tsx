@@ -11,6 +11,7 @@ interface DateRangePickerProps {
   range: DashboardRange;
   launchDate: string;
   latestObservedDate: string;
+  anchorDate: string;
   onChange: (range: DashboardRange) => void;
 }
 
@@ -25,10 +26,14 @@ export function DateRangePicker({
   range,
   launchDate,
   latestObservedDate,
+  anchorDate,
   onChange,
 }: DateRangePickerProps) {
   function handlePreset(preset: Exclude<RangePreset, "custom">): void {
-    onChange(computePresetRange(preset, launchDate, latestObservedDate));
+    // Anchor presets on the snapshot date so trends always end at what the
+    // leaderboard is showing. latestObservedDate is only used as the upper
+    // bound on the date inputs below.
+    onChange(computePresetRange(preset, launchDate, anchorDate));
   }
 
   function handleFromChange(event: React.ChangeEvent<HTMLInputElement>): void {

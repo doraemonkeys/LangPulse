@@ -12,6 +12,7 @@ export interface FakeApiOptions {
   metadata?: MetadataResponse;
   latest?: LatestSnapshotResponse;
   snapshotByKey?: Record<string, SnapshotResponse>;
+  snapshotErrorByKey?: Record<string, Error>;
   compareByKey?: Record<string, CompareResponse>;
   snapshotError?: Error;
   compareError?: Error;
@@ -46,7 +47,10 @@ export function createFakeApi(options: FakeApiOptions): FakeApiRecorder {
     async getSnapshot(input) {
       snapshotCalls.push(input);
       if (options.snapshotError !== undefined) throw options.snapshotError;
-      const response = options.snapshotByKey?.[snapshotKey(input.date, input.threshold)];
+      const key = snapshotKey(input.date, input.threshold);
+      const overrideError = options.snapshotErrorByKey?.[key];
+      if (overrideError !== undefined) throw overrideError;
+      const response = options.snapshotByKey?.[key];
       if (response === undefined) {
         throw new Error(`no snapshot configured for ${input.date} @ ${input.threshold}`);
       }

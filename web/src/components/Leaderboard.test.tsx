@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Leaderboard } from "./Leaderboard";
+import { ApiError } from "../api/client";
 import { MAX_PINNED_LANGUAGES } from "../state/actions";
 import type { PublicLanguage, SnapshotResponse } from "../api/types";
 
@@ -36,6 +37,8 @@ function defaultProps() {
     onResetPins: () => {},
     registryLanguages: registry,
     observedDate: "2026-04-10" as string | null,
+    latestObservedDate: "2026-04-10" as string | null,
+    onJumpToLatest: () => {},
   };
 }
 
@@ -86,6 +89,37 @@ describe("Leaderboard", () => {
         {...defaultProps()}
         snapshot={undefined}
         error={new Error("boom")}
+      />,
+    );
+    expect(screen.getByText("Could not load leaderboard")).toBeInTheDocument();
+  });
+
+  it("shows the sparse-day banner with Jump-to-latest on a 404", async () => {
+    const user = userEvent.setup();
+    const onJumpToLatest = vi.fn();
+    render(
+      <Leaderboard
+        {...defaultProps()}
+        snapshot={undefined}
+        observedDate="2026-04-05"
+        latestObservedDate="2026-04-10"
+        error={new ApiError(404, "No published snapshot exists for this date.", "snapshot_not_found")}
+        onJumpToLatest={onJumpToLatest}
+      />,
+    );
+    expect(screen.getByText("No snapshot for this date")).toBeInTheDocument();
+    expect(screen.getByText(/2026-04-05/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Jump to latest/ }));
+    expect(onJumpToLatest).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls through to the generic error banner when 404 has no jump target", () => {
+    render(
+      <Leaderboard
+        {...defaultProps()}
+        snapshot={undefined}
+        latestObservedDate={null}
+        error={new ApiError(404, "Not found.", "snapshot_not_found")}
       />,
     );
     expect(screen.getByText("Could not load leaderboard")).toBeInTheDocument();

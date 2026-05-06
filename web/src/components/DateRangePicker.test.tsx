@@ -14,6 +14,7 @@ describe("DateRangePicker", () => {
         range={initialRange}
         launchDate={launchDate}
         latestObservedDate={latestObservedDate}
+        anchorDate={latestObservedDate}
         onChange={() => {}}
       />,
     );
@@ -28,11 +29,30 @@ describe("DateRangePicker", () => {
         range={initialRange}
         launchDate={launchDate}
         latestObservedDate={latestObservedDate}
+        anchorDate={latestObservedDate}
         onChange={onChange}
       />,
     );
     await user.click(screen.getByRole("button", { name: "30d" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ preset: "30d" }));
+  });
+
+  it("anchors preset ranges on anchorDate, not on latestObservedDate", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <DateRangePicker
+        range={initialRange}
+        launchDate={launchDate}
+        latestObservedDate={latestObservedDate}
+        anchorDate="2026-04-15"
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "30d" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "2026-04-15", preset: "30d" }),
+    );
   });
 
   it("clamps custom From before launch and keeps To on or after From", () => {
@@ -42,6 +62,7 @@ describe("DateRangePicker", () => {
         range={initialRange}
         launchDate={launchDate}
         latestObservedDate={latestObservedDate}
+        anchorDate={latestObservedDate}
         onChange={onChange}
       />,
     );
@@ -55,6 +76,7 @@ describe("DateRangePicker", () => {
         range={{ from: "2026-04-18", to: "2026-04-20", preset: "custom" }}
         launchDate={launchDate}
         latestObservedDate={latestObservedDate}
+        anchorDate={latestObservedDate}
         onChange={onChange}
       />,
     );
@@ -69,6 +91,7 @@ describe("DateRangePicker", () => {
         range={initialRange}
         launchDate={launchDate}
         latestObservedDate={latestObservedDate}
+        anchorDate={latestObservedDate}
         onChange={onChange}
       />,
     );

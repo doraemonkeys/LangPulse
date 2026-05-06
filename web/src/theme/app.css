@@ -113,7 +113,8 @@ body {
 }
 
 .threshold-chips,
-.date-range {
+.date-range,
+.snapshot-date {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -121,7 +122,8 @@ body {
 }
 
 .threshold-chips__label,
-.date-range__field > span {
+.date-range__field > span,
+.snapshot-date__label {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -141,6 +143,51 @@ body {
   display: inline-flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.snapshot-date__input {
+  padding: 6px 10px;
+  border-radius: var(--radius-chip);
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshot-date__step {
+  min-width: 32px;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+
+.snapshot-date__step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Chart card: groups the range controls with the trend chart so the
+   From/To/preset row visually owns the chart it filters. The inner
+   .comparison section drops its own panel chrome to avoid a double-card. */
+.chart-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 20px 24px;
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chart-card > .comparison {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  backdrop-filter: none;
 }
 
 .chip {
@@ -596,6 +643,15 @@ body {
   .controls-card {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .snapshot-date,
+  .date-range {
+    flex-wrap: wrap;
+  }
+
+  .snapshot-date__input {
+    flex: 1 1 140px;
   }
 
   .leaderboard-row {
