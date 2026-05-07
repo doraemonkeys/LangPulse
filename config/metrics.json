@@ -225,7 +225,28 @@
       "label": "Ruby",
       "github_query_fragment": "language:\"ruby\"",
       "active_from": "2026-04-01",
-      "active_to": "2026-04-03"
+      "active_to": null
+    },
+    {
+      "id": "objective-c",
+      "label": "Objective-C",
+      "github_query_fragment": "language:\"Objective-C\"",
+      "active_from": "2026-05-07",
+      "active_to": null
+    },
+    {
+      "id": "julia",
+      "label": "Julia",
+      "github_query_fragment": "language:\"Julia\"",
+      "active_from": "2026-05-07",
+      "active_to": null
+    },
+    {
+      "id": "haskell",
+      "label": "Haskell",
+      "github_query_fragment": "language:\"Haskell\"",
+      "active_from": "2026-05-07",
+      "active_to": null
     }
   ],
   "thresholds": [

@@ -111,7 +111,7 @@ describe("GET /api/quality/snapshot", () => {
       published_at: "2026-04-09T02:05:00.000Z",
       rows: [
         { language_id: "go", threshold_value: 0, count: 1, collected_at: "2026-04-09T02:00:00.000Z" },
-        { language_id: "ruby", threshold_value: 0, count: 9, collected_at: "2026-04-09T02:00:00.000Z" },
+        { language_id: "c", threshold_value: 0, count: 9, collected_at: "2026-04-09T02:00:00.000Z" },
       ],
     });
 
@@ -123,7 +123,7 @@ describe("GET /api/quality/snapshot", () => {
     const body = await readJson<SnapshotBody>(response);
 
     expect(response.status).toBe(200);
-    expect(body.languages.some((language) => language.id === "ruby")).toBe(false);
+    expect(body.languages.some((language) => language.id === "c")).toBe(false);
     expect(body.languages.some((language) => language.id === "go")).toBe(true);
   });
 

@@ -9,6 +9,7 @@ import {
   makeInternalRequest,
   readJson,
   resetDatabase,
+  TEST_EXPECTED_ROWS,
   TEST_NOW,
   TEST_OBSERVED_DATE,
 } from "./helpers";
@@ -34,7 +35,7 @@ async function createRunningRun(harness: ReturnType<typeof createHarness>): Prom
     harness.app,
     makeInternalRequest("/internal/quality-runs", "POST", {
       observed_date: TEST_OBSERVED_DATE,
-      expected_rows: 4,
+      expected_rows: TEST_EXPECTED_ROWS,
     }),
   );
   expect(response.status).toBe(201);
@@ -167,12 +168,12 @@ describe("internal quality runs rows:batch", () => {
   });
 
   it("rejects languages inactive for observed_date", async () => {
-    // Ruby is registered but its active_to precedes the test observed_date.
+    // C is registered but its active_from is after the test observed_date.
     const harness = createHarness();
     const runId = await createRunningRun(harness);
 
     const response = await postBatch(harness, runId, [
-      { language_id: "ruby", threshold_value: 0, count: 1, collected_at: TEST_NOW },
+      { language_id: "c", threshold_value: 0, count: 1, collected_at: TEST_NOW },
     ]);
 
     expect(response.status).toBe(409);

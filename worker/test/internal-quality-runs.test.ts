@@ -8,6 +8,7 @@ import {
   readJson,
   resetDatabase,
   TEST_BASE_URL,
+  TEST_EXPECTED_ROWS,
   TEST_NOW,
   TEST_OBSERVED_DATE,
 } from "./helpers";
@@ -48,7 +49,7 @@ describe("internal quality run routes", () => {
         },
         body: JSON.stringify({
           observed_date: TEST_OBSERVED_DATE,
-          expected_rows: 4,
+          expected_rows: TEST_EXPECTED_ROWS,
         }),
       }),
     );
@@ -68,7 +69,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     const body = await readJson<
@@ -90,7 +91,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     const createdRun = await readJson<{ run: { run_id: string } } & Record<string, unknown>>(
@@ -121,7 +122,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     const createdRun = await readJson<{ run: { run_id: string } } & Record<string, unknown>>(
@@ -140,6 +141,8 @@ describe("internal quality run routes", () => {
             { language_id: "go", threshold_value: 10, count: 80, collected_at: TEST_NOW },
             { language_id: "rust", threshold_value: 0, count: 70, collected_at: TEST_NOW },
             { language_id: "rust", threshold_value: 10, count: 60, collected_at: TEST_NOW },
+            { language_id: "ruby", threshold_value: 0, count: 50, collected_at: TEST_NOW },
+            { language_id: "ruby", threshold_value: 10, count: 40, collected_at: TEST_NOW },
           ],
         },
       ),
@@ -181,7 +184,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     expect(createAfterPublication.status).toBe(409);
@@ -193,7 +196,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     const createdRun = await readJson<{ run: { run_id: string } } & Record<string, unknown>>(
@@ -236,7 +239,7 @@ describe("internal quality run routes", () => {
       harness.app,
       makeInternalRequest("/internal/quality-runs", "POST", {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     );
     const createdRun = await readJson<{ run: { run_id: string } } & Record<string, unknown>>(

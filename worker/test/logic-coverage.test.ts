@@ -36,6 +36,7 @@ import {
   resetDatabase,
   testEnv,
   TEST_BASE_URL,
+  TEST_EXPECTED_ROWS,
   TEST_NOW,
   TEST_OBSERVED_DATE,
 } from "./helpers";
@@ -186,6 +187,7 @@ describe("supporting logic coverage", () => {
     expect(getActiveLanguages(metricsRegistry, "2026-04-07").map((entry) => entry.id)).toEqual([
       "go",
       "rust",
+      "ruby",
     ]);
     expect(getActiveThresholds(metricsRegistry, "2026-04-07").map((entry) => entry.value)).toEqual([
       0,
@@ -222,6 +224,7 @@ describe("supporting logic coverage", () => {
       "lua",
       "erlang",
       "scala",
+      "ruby",
     ]);
     expect(getActiveThresholds(metricsRegistry, "2026-04-08").map((entry) => entry.value)).toEqual([
       0,
@@ -372,14 +375,14 @@ describe("supporting logic coverage", () => {
     await expect(
       createQualityRun(baseContext, {
         observed_date: "2026-03-31",
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     ).rejects.toMatchObject({ code: "observed_date_before_launch" });
 
     await expect(
       createQualityRun(baseContext, {
         observed_date: "2026-04-06",
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     ).rejects.toMatchObject({ code: "observed_date_not_current_utc_date" });
 
@@ -440,7 +443,7 @@ describe("supporting logic coverage", () => {
 
     await expect(
       upsertQualityRunRows(createContext(), "row-run", {
-        rows: [{ language_id: "ruby", threshold_value: 0, count: 1, collected_at: TEST_NOW }],
+        rows: [{ language_id: "c", threshold_value: 0, count: 1, collected_at: TEST_NOW }],
       }),
     ).rejects.toMatchObject({ code: "language_inactive_for_observed_date" });
 
@@ -632,7 +635,7 @@ describe("worker runtime branch coverage", () => {
     await expect(
       createQualityRun(createContext(), {
         observed_date: "bad-date",
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     ).rejects.toMatchObject({ code: "invalid_observed_date" });
 
@@ -722,7 +725,7 @@ describe("worker runtime branch coverage", () => {
     await expect(
       createQualityRun(createFallbackContext, {
         observed_date: TEST_OBSERVED_DATE,
-        expected_rows: 4,
+        expected_rows: TEST_EXPECTED_ROWS,
       }),
     ).rejects.toMatchObject({ code: "run_creation_failed" });
 

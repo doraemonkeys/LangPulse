@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { getExpectedRowCount, metricsRegistry } from "../src/config-registry";
 import { createWorker } from "../src/index";
 import type { QualityRunRecord, RunStatus, WorkerEnv } from "../src/types";
 import { TEST_SCHEMA_STATEMENTS } from "./schema";
@@ -7,6 +8,7 @@ export const TEST_INTERNAL_TOKEN = "test-internal-token";
 export const TEST_BASE_URL = "https://langpulse.test";
 export const TEST_OBSERVED_DATE = "2026-04-07";
 export const TEST_NOW = "2026-04-07T12:00:00.000Z";
+export const TEST_EXPECTED_ROWS = getExpectedRowCount(metricsRegistry, TEST_OBSERVED_DATE);
 
 export interface TestHarness {
   app: ExportedHandler<WorkerEnv>;
@@ -99,7 +101,7 @@ export async function insertRun(overrides: Partial<SeedRunInput> & Pick<SeedRunI
     status: overrides.status ?? "running",
     lease_expires_at: overrides.lease_expires_at ?? "2026-04-07T12:05:00.000Z",
     last_heartbeat_at: overrides.last_heartbeat_at ?? TEST_NOW,
-    expected_rows: overrides.expected_rows ?? 4,
+    expected_rows: overrides.expected_rows ?? TEST_EXPECTED_ROWS,
     actual_rows: overrides.actual_rows ?? 0,
     error_summary: overrides.error_summary ?? null,
     started_at: overrides.started_at ?? TEST_NOW,
