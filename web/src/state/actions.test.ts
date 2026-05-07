@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createInitialState, dashboardReducer, DEFAULT_THRESHOLD } from "./actions";
 
 describe("dashboardReducer", () => {
-  const initial = createInitialState("light");
+  const initial = createInitialState({ preference: "light", theme: "light" });
 
   it("starts with threshold >= 2 and empty pins", () => {
     expect(initial.threshold).toBe(DEFAULT_THRESHOLD);
     expect(initial.pinnedLanguages.size).toBe(0);
     expect(initial.theme).toBe("light");
+    expect(initial.themePreference).toBe("light");
   });
 
   it("updates threshold without clearing pins", () => {
@@ -60,7 +61,28 @@ describe("dashboardReducer", () => {
     });
     expect(withLaunch.launchDate).toBe("2026-04-01");
 
-    const dark = dashboardReducer(withLaunch, { type: "set_theme", theme: "dark" });
+    const dark = dashboardReducer(withLaunch, {
+      type: "sync_theme",
+      preference: "dark",
+      theme: "dark",
+    });
     expect(dark.theme).toBe("dark");
+    expect(dark.themePreference).toBe("dark");
+
+    const system = dashboardReducer(dark, {
+      type: "sync_theme",
+      preference: "system",
+      theme: "light",
+    });
+    expect(system.themePreference).toBe("system");
+    expect(system.theme).toBe("light");
+  });
+
+  it("treats set_theme_preference as a no-op (provider intercepts it)", () => {
+    const next = dashboardReducer(initial, {
+      type: "set_theme_preference",
+      preference: "dark",
+    });
+    expect(next).toBe(initial);
   });
 });

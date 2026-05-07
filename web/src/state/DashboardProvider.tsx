@@ -6,6 +6,7 @@ import {
   dashboardReducer,
   type DashboardAction,
   type DashboardState,
+  type InitialThemeState,
 } from "./actions";
 
 interface DashboardContextValue {
@@ -20,27 +21,35 @@ interface DashboardProviderProps {
 }
 
 export function DashboardProvider({ children }: DashboardProviderProps) {
-  const { theme, setTheme } = useTheme();
-  const [state, dispatch] = useReducer(dashboardReducer, theme, createInitialState);
+  const { preference, theme, setPreference } = useTheme();
+  const [state, dispatch] = useReducer(
+    dashboardReducer,
+    { preference, theme } satisfies InitialThemeState,
+    createInitialState,
+  );
 
-  // Keep the reducer's theme field in sync with the persistent hook. This lets
-  // components read `state.theme` (a single source of truth) while the hook
-  // owns the localStorage + prefers-color-scheme wiring.
-  if (state.theme !== theme) {
-    dispatch({ type: "set_theme", theme });
+  // Mirror the hook's preference + resolved theme into the reducer so consumers
+  // can read a single source of truth (`state.theme`, `state.themePreference`).
+  // The hook owns persistence (localStorage) and the OS listener; this sync
+  // keeps the reducer's view consistent across re-renders.
+  if (state.themePreference !== preference || state.theme !== theme) {
+    dispatch({ type: "sync_theme", preference, theme });
   }
 
   const value = useMemo<DashboardContextValue>(() => {
     const wrappedDispatch: Dispatch<DashboardAction> = (action) => {
-      if (action.type === "set_theme") {
-        setTheme(action.theme);
+      if (action.type === "set_theme_preference") {
+        // Route preference changes through the hook so localStorage and the
+        // matchMedia subscription stay authoritative; the sync above will
+        // propagate the result back into reducer state.
+        setPreference(action.preference);
         return;
       }
       dispatch(action);
     };
 
     return { state, dispatch: wrappedDispatch };
-  }, [state, setTheme]);
+  }, [state, setPreference]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

@@ -5,9 +5,10 @@ import { DashboardProvider } from "../state/DashboardProvider";
 import { ThemeToggle } from "./ThemeToggle";
 
 describe("ThemeToggle", () => {
-  it("toggles between light and dark", async () => {
+  it("cycles through light → dark → system → light", async () => {
     const user = userEvent.setup();
     window.localStorage.clear();
+    window.localStorage.setItem("langpulse:theme", "light");
 
     render(
       <DashboardProvider>
@@ -16,10 +17,12 @@ describe("ThemeToggle", () => {
     );
 
     const button = screen.getByRole("button");
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAttribute("data-theme-preference", "light");
     await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("data-theme-preference", "dark");
     await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAttribute("data-theme-preference", "system");
+    await user.click(button);
+    expect(button).toHaveAttribute("data-theme-preference", "light");
   });
 });
