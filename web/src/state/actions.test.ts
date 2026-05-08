@@ -31,15 +31,15 @@ describe("dashboardReducer", () => {
     expect(afterAddReset.pinnedLanguages.size).toBe(0);
   });
 
-  it("starts in absolute chart mode and toggles to relative without losing other state", () => {
-    expect(initial.chartMode).toBe("absolute");
+  it("starts in relative chart mode and toggles chart mode without losing other state", () => {
+    expect(initial.chartMode).toBe("relative");
     const pinned = dashboardReducer(initial, { type: "toggle_pin", languageId: "go" });
-    const relative = dashboardReducer(pinned, { type: "set_chart_mode", mode: "relative" });
-    expect(relative.chartMode).toBe("relative");
-    expect(relative.pinnedLanguages.has("go")).toBe(true);
+    const absolute = dashboardReducer(pinned, { type: "set_chart_mode", mode: "absolute" });
+    expect(absolute.chartMode).toBe("absolute");
+    expect(absolute.pinnedLanguages.has("go")).toBe(true);
 
-    const sameMode = dashboardReducer(relative, { type: "set_chart_mode", mode: "relative" });
-    expect(sameMode).toBe(relative);
+    const sameMode = dashboardReducer(absolute, { type: "set_chart_mode", mode: "absolute" });
+    expect(sameMode).toBe(absolute);
   });
 
   it("updates range, observed_date, launch_date, and theme", () => {

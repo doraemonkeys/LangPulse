@@ -92,7 +92,7 @@ export const DEFAULT_THRESHOLD = 2;
 // UI-gated pinning never produces a compare request the server will reject.
 export const MAX_PINNED_LANGUAGES = 20;
 
-export const DEFAULT_CHART_MODE: ChartMode = "absolute";
+export const DEFAULT_CHART_MODE: ChartMode = "relative";
 
 export interface InitialThemeState {
   preference: ThemePreference;
