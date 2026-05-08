@@ -1,7 +1,10 @@
+import { getLanguageColor } from "./languageColors";
+
 export type ThemeMode = "light" | "dark";
 
 // Okabe-Ito colorblind-safe palette plus two warm extensions, tuned to hold
-// contrast against both the parchment and the dark slate backgrounds.
+// contrast against both the parchment and the dark slate backgrounds. Used as
+// a deterministic fallback for languages that lack a github-linguist color.
 const BASE_PALETTE = [
   "#E69F00",
   "#56B4E9",
@@ -31,10 +34,21 @@ export function getLineColor(index: number, theme: ThemeMode): string {
   return BASE_PALETTE[position];
 }
 
+// Resolves color per language ID. Known languages get their github-linguist
+// hue (with theme-aware overrides for low-contrast cases); unknown IDs fall
+// back to the Okabe-Ito wheel indexed by their position in the input list, so
+// neighboring unknowns still get distinct colors.
 export function getPaletteForIds(ids: string[], theme: ThemeMode): Map<string, string> {
   const result = new Map<string, string>();
-  ids.forEach((id, index) => {
-    result.set(id, getLineColor(index, theme));
+  let fallbackIndex = 0;
+  ids.forEach((id) => {
+    const linguistColor = getLanguageColor(id, theme);
+    if (linguistColor !== null) {
+      result.set(id, linguistColor);
+    } else {
+      result.set(id, getLineColor(fallbackIndex, theme));
+      fallbackIndex += 1;
+    }
   });
   return result;
 }
