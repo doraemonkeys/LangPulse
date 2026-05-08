@@ -247,6 +247,20 @@
       "github_query_fragment": "language:\"Haskell\"",
       "active_from": "2026-05-07",
       "active_to": null
+    },
+    {
+      "id": "perl",
+      "label": "Perl",
+      "github_query_fragment": "language:\"Perl\"",
+      "active_from": "2026-05-08",
+      "active_to": null
+    },
+    {
+      "id": "nix",
+      "label": "Nix",
+      "github_query_fragment": "language:\"Nix\"",
+      "active_from": "2026-05-08",
+      "active_to": null
     }
   ],
   "thresholds": [
