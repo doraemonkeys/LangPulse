@@ -65,9 +65,12 @@ export function Leaderboard(props: LeaderboardProps) {
   const topLanguages = sortedLanguages.slice(0, LEADERBOARD_SIZE);
   const tailLanguages = sortedLanguages.slice(LEADERBOARD_SIZE);
 
+  // Resolve colors for the full sorted list (not just top 10) so tail rows
+  // keep each language's identity hue. Passing the whole list in one call also
+  // advances the Okabe-Ito fallback index consistently across top + tail.
   const palette = useMemo(
-    () => getPaletteForIds(topLanguages.map((language) => language.id), theme),
-    [topLanguages, theme],
+    () => getPaletteForIds(sortedLanguages.map((language) => language.id), theme),
+    [sortedLanguages, theme],
   );
 
   const atCap = pinnedLanguages.size >= MAX_PINNED_LANGUAGES;
@@ -163,13 +166,14 @@ export function Leaderboard(props: LeaderboardProps) {
           <div className="leaderboard__rows leaderboard__rows--more" role="list">
             {tailLanguages.map((entry, index) => {
               const pinned = pinnedLanguages.has(entry.id);
+              const color = palette.get(entry.id) ?? "currentColor";
               return (
                 <div role="listitem" key={entry.id}>
                   <LeaderboardRow
                     rank={LEADERBOARD_SIZE + index + 1}
                     entry={entry}
                     sparklinePoints={[]}
-                    color="var(--ink-muted)"
+                    color={color}
                     pinned={pinned}
                     onToggle={onTogglePin}
                     showSparkline={false}
