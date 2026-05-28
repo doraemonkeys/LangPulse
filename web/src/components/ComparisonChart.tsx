@@ -26,6 +26,10 @@ interface ComparisonChartProps {
   theme: ThemeMode;
   pinnedLanguages: ReadonlySet<string>;
   onTogglePin: (languageId: string) => void;
+  // Removes a language from the chart and lets the parent pick a replacement.
+  // The chart itself is leaderboard-agnostic, so the replacement policy lives
+  // in App where the snapshot ranking is available.
+  onRemoveLanguage: (languageId: string) => void;
   chartMode: ChartMode;
   onChangeChartMode: (mode: ChartMode) => void;
 }
@@ -51,6 +55,7 @@ export function ComparisonChart(props: ComparisonChartProps) {
     theme,
     pinnedLanguages,
     onTogglePin,
+    onRemoveLanguage,
     chartMode,
     onChangeChartMode,
   } = props;
@@ -183,6 +188,7 @@ export function ComparisonChart(props: ComparisonChartProps) {
         palette={palette}
         pinnedLanguages={pinnedLanguages}
         onToggle={onTogglePin}
+        onRemove={onRemoveLanguage}
         unavailableByLanguage={
           // Only surface the unavailable indicator in relative mode. Absolute
           // mode renders a missing series exactly as "no line on those days,"

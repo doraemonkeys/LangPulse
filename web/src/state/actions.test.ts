@@ -85,4 +85,29 @@ describe("dashboardReducer", () => {
     });
     expect(next).toBe(initial);
   });
+
+  it("set_pinned replaces the pin set, dedupes, and caps at MAX_PINNED_LANGUAGES", () => {
+    const explicit = dashboardReducer(initial, {
+      type: "set_pinned",
+      languageIds: ["go", "rust", "go", "python"],
+    });
+    expect(explicit.pinnedLanguages.size).toBe(3);
+    expect(explicit.pinnedLanguages.has("go")).toBe(true);
+    expect(explicit.pinnedLanguages.has("rust")).toBe(true);
+    expect(explicit.pinnedLanguages.has("python")).toBe(true);
+
+    // Identity short-circuit: dispatching the same set should return the same state ref.
+    const sameAgain = dashboardReducer(explicit, {
+      type: "set_pinned",
+      languageIds: ["python", "rust", "go"],
+    });
+    expect(sameAgain).toBe(explicit);
+
+    const overflow = Array.from({ length: 25 }, (_, idx) => `lang-${idx}`);
+    const capped = dashboardReducer(initial, { type: "set_pinned", languageIds: overflow });
+    expect(capped.pinnedLanguages.size).toBe(20);
+    expect(capped.pinnedLanguages.has("lang-0")).toBe(true);
+    expect(capped.pinnedLanguages.has("lang-19")).toBe(true);
+    expect(capped.pinnedLanguages.has("lang-20")).toBe(false);
+  });
 });

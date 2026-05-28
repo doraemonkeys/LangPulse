@@ -584,10 +584,9 @@ body {
 }
 
 .legend-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
   border-radius: var(--radius-chip);
   background: var(--chip-bg);
   color: var(--ink);
@@ -613,10 +612,69 @@ body {
   filter: grayscale(0.7);
 }
 
+.legend-chip__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: inherit;
+}
+
 .legend-chip__swatch {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* The × is absolutely positioned so the chip's natural width tracks the label
+ * only — toggling visibility on hover/focus must never reflow the legend. */
+.legend-chip__remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--ink-muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.7);
+  transform-origin: center;
+  transition: opacity 0.12s ease, transform 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.legend-chip:hover .legend-chip__remove,
+.legend-chip:focus-within .legend-chip__remove {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.legend-chip__remove:hover {
+  background: var(--negative);
+  border-color: var(--negative);
+  color: var(--surface);
+}
+
+.legend-chip__remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
 }
 
 /* State banners */

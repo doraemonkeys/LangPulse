@@ -22,7 +22,7 @@ describe("LanguageLegend", () => {
       "aria-pressed",
       "true",
     );
-    await user.click(screen.getByRole("button", { name: /Rust/ }));
+    await user.click(screen.getByRole("button", { name: /Rust \(transient\)/ }));
     expect(onToggle).toHaveBeenCalledWith("rust");
   });
 
@@ -40,8 +40,42 @@ describe("LanguageLegend", () => {
       />,
     );
     const nascent = screen.getByRole("button", { name: /Nascent.*Baseline is zero/ });
-    expect(nascent).toHaveClass("legend-chip--unavailable");
-    expect(nascent).toHaveAttribute("title", "Baseline is zero — no relative change to show");
-    expect(screen.getByRole("button", { name: /^Go/ })).not.toHaveClass("legend-chip--unavailable");
+    const chip = nascent.closest(".legend-chip");
+    expect(chip).toHaveClass("legend-chip--unavailable");
+    expect(chip).toHaveAttribute("title", "Baseline is zero — no relative change to show");
+    const goChip = screen.getByRole("button", { name: /^Go \(/ }).closest(".legend-chip");
+    expect(goChip).not.toHaveClass("legend-chip--unavailable");
+  });
+
+  it("omits the remove button when onRemove is not provided", () => {
+    render(
+      <LanguageLegend
+        languages={[{ id: "go", label: "Go" }]}
+        palette={new Map([["go", "#E69F00"]])}
+        pinnedLanguages={new Set()}
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Remove Go from chart/ })).toBeNull();
+  });
+
+  it("renders a remove button per chip and forwards the language id on click", async () => {
+    const user = userEvent.setup();
+    const onRemove = vi.fn();
+    render(
+      <LanguageLegend
+        languages={[
+          { id: "go", label: "Go" },
+          { id: "rust", label: "Rust" },
+        ]}
+        palette={new Map([["go", "#E69F00"], ["rust", "#56B4E9"]])}
+        pinnedLanguages={new Set()}
+        onToggle={() => {}}
+        onRemove={onRemove}
+      />,
+    );
+    const removeRust = screen.getByRole("button", { name: /Remove Rust from chart/ });
+    await user.click(removeRust);
+    expect(onRemove).toHaveBeenCalledWith("rust");
   });
 });

@@ -25,6 +25,7 @@ const noopProps = {
   theme: "light" as const,
   pinnedLanguages: new Set<string>(),
   onTogglePin: () => {},
+  onRemoveLanguage: () => {},
   chartMode: "absolute" as const,
   onChangeChartMode: () => {},
 };
@@ -33,9 +34,17 @@ describe("ComparisonChart", () => {
   it("renders the chart region with the legend and the mode toggle", () => {
     render(<ComparisonChart {...noopProps} data={data} />);
     expect(screen.getByRole("region", { name: /Language comparison chart/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Go/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Go \(/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Absolute/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /Relative/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("invokes onRemoveLanguage when a chip's remove button is clicked", async () => {
+    const user = userEvent.setup();
+    const handler = vi.fn();
+    render(<ComparisonChart {...noopProps} data={data} onRemoveLanguage={handler} />);
+    await user.click(screen.getByRole("button", { name: /Remove Go from chart/ }));
+    expect(handler).toHaveBeenCalledWith("go");
   });
 
   it("invokes the mode change handler when the user clicks Relative", async () => {
@@ -82,9 +91,10 @@ describe("ComparisonChart", () => {
       ],
     };
     render(<ComparisonChart {...noopProps} data={zeroBaseline} chartMode="relative" />);
-    expect(screen.getByRole("button", { name: /Nascent.*Baseline is zero/ })).toHaveClass(
-      "legend-chip--unavailable",
-    );
+    const nascentChip = screen
+      .getByRole("button", { name: /Nascent.*Baseline is zero/ })
+      .closest(".legend-chip");
+    expect(nascentChip).toHaveClass("legend-chip--unavailable");
   });
 
   it("does not flag legend chips as unavailable in absolute mode", () => {
@@ -102,8 +112,9 @@ describe("ComparisonChart", () => {
       ],
     };
     render(<ComparisonChart {...noopProps} data={zeroBaseline} chartMode="absolute" />);
-    expect(screen.getByRole("button", { name: /^Nascent/ })).not.toHaveClass(
-      "legend-chip--unavailable",
-    );
+    const nascentChip = screen
+      .getByRole("button", { name: /^Nascent \(/ })
+      .closest(".legend-chip");
+    expect(nascentChip).not.toHaveClass("legend-chip--unavailable");
   });
 });

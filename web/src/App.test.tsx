@@ -125,6 +125,21 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Reset to top 10/ })).toBeInTheDocument();
   });
 
+  it("X-ing the only pinned language in the chart legend reverts to default top-10", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const goRow = await screen.findByRole("button", { name: /Go, 1,202 repositories/ });
+    await user.click(goRow);
+    await waitFor(() => expect(goRow).toHaveAttribute("aria-pressed", "true"));
+
+    const removeGo = await screen.findByRole("button", { name: /Remove go from chart/i });
+    await user.click(removeGo);
+
+    await waitFor(() => expect(goRow).toHaveAttribute("aria-pressed", "false"));
+    expect(screen.queryByRole("button", { name: /Reset to top 10/ })).toBeNull();
+  });
+
   it("pins a language selected from the language picker via typeahead + Enter", async () => {
     const user = userEvent.setup();
     renderApp();

@@ -80,13 +80,13 @@ export function App() {
     threshold: state.threshold,
   });
 
-  const topTenIds = useMemo(() => {
+  const rankedIds = useMemo(() => {
     if (snapshotQuery.data === undefined) return [];
     return [...snapshotQuery.data.languages]
       .sort((a, b) => b.count - a.count)
-      .slice(0, LEADERBOARD_SIZE)
       .map((language) => language.id);
   }, [snapshotQuery.data]);
+  const topTenIds = useMemo(() => rankedIds.slice(0, LEADERBOARD_SIZE), [rankedIds]);
 
   const sparklineFrom = useMemo(
     () => (state.observedDate === null ? "" : addDaysUtc(state.observedDate, -(SPARKLINE_RANGE_DAYS - 1))),
@@ -128,6 +128,36 @@ export function App() {
         />
       </div>
     );
+  }
+
+  // Removing a language from the chart legend has two meanings depending on
+  // mode:
+  //   - Default top-10 view (no explicit pins): user wants to "swap out" a
+  //     line, so we backfill from the next-best ranked language and solidify
+  //     the new set as explicit pins.
+  //   - Explicit pin mode (user-curated set): user wants to drop a line they
+  //     previously selected. Just remove it; if the set empties out, reset
+  //     back to the default top-10 view rather than auto-picking a stranger.
+  function handleRemoveChartLanguage(languageId: string): void {
+    if (rankedIds.length === 0) return;
+    const currentSet = chartLanguages;
+    if (!currentSet.includes(languageId)) return;
+    const remaining = currentSet.filter((id) => id !== languageId);
+
+    if (pinnedIds.length === 0) {
+      const replacement = rankedIds.find(
+        (id) => id !== languageId && !remaining.includes(id),
+      );
+      const next = replacement === undefined ? remaining : [...remaining, replacement];
+      dispatch({ type: "set_pinned", languageIds: next });
+      return;
+    }
+
+    if (remaining.length === 0) {
+      dispatch({ type: "reset_pins" });
+      return;
+    }
+    dispatch({ type: "set_pinned", languageIds: remaining });
   }
 
   function handleSnapshotChange(date: string): void {
@@ -197,6 +227,7 @@ export function App() {
           theme={state.theme}
           pinnedLanguages={state.pinnedLanguages}
           onTogglePin={(languageId) => dispatch({ type: "toggle_pin", languageId })}
+          onRemoveLanguage={handleRemoveChartLanguage}
           chartMode={state.chartMode}
           onChangeChartMode={(mode) => dispatch({ type: "set_chart_mode", mode })}
         />

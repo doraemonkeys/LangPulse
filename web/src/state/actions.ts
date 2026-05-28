@@ -36,6 +36,10 @@ export type DashboardAction =
   | { type: "set_threshold"; threshold: number }
   | { type: "set_range"; range: DashboardRange }
   | { type: "toggle_pin"; languageId: string }
+  // Explicit batch set — used when an interaction (e.g. remove-with-replacement
+  // from the chart legend) computes the new pinned set in one shot. Toggling
+  // would race with the implicit "no pins ⇒ top-10" fallback.
+  | { type: "set_pinned"; languageIds: ReadonlyArray<string> }
   | { type: "reset_pins" }
   | { type: "set_observed_date"; observedDate: string | null }
   | { type: "set_launch_date"; launchDate: string }
@@ -56,6 +60,14 @@ function togglePin(pinnedLanguages: ReadonlySet<string>, languageId: string): Se
   return next;
 }
 
+function setsHaveSameMembers(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
 function syncTheme(state: DashboardState, preference: ThemePreference, theme: ThemeMode): DashboardState {
   if (state.themePreference === preference && state.theme === theme) return state;
   return { ...state, themePreference: preference, theme };
@@ -69,6 +81,12 @@ export function dashboardReducer(state: DashboardState, action: DashboardAction)
       return { ...state, range: action.range };
     case "toggle_pin":
       return { ...state, pinnedLanguages: togglePin(state.pinnedLanguages, action.languageId) };
+    case "set_pinned": {
+      const next = new Set<string>(action.languageIds.slice(0, MAX_PINNED_LANGUAGES));
+      return setsHaveSameMembers(next, state.pinnedLanguages)
+        ? state
+        : { ...state, pinnedLanguages: next };
+    }
     case "reset_pins":
       return state.pinnedLanguages.size === 0 ? state : { ...state, pinnedLanguages: new Set<string>() };
     case "set_observed_date":
