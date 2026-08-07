@@ -60,7 +60,7 @@ function renderApp(opts: RenderAppOptions = {}) {
       "2026-02-10",
       "2026-04-10",
     );
-    // Chart calls default to 90d range.
+    // Chart calls default to the 60d range, clamped at the product launch date.
     compareByKey[compareKey(["go", "python", "rust"], t, "2026-04-01", "2026-04-10")] = buildCompare(
       ["go", "python", "rust"],
       t,
@@ -102,6 +102,14 @@ function renderApp(opts: RenderAppOptions = {}) {
 }
 
 describe("App", () => {
+  it("defaults the trend chart to 60d without offering a Max range", async () => {
+    renderApp();
+
+    const defaultRange = await screen.findByRole("button", { name: "60d" });
+    expect(defaultRange).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /max/i })).not.toBeInTheDocument();
+  });
+
   it("shows the default top-10 leaderboard and lets the user switch thresholds", async () => {
     const user = userEvent.setup();
     renderApp();

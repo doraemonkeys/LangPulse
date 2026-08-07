@@ -4,8 +4,9 @@ import { createInitialState, dashboardReducer, DEFAULT_THRESHOLD } from "./actio
 describe("dashboardReducer", () => {
   const initial = createInitialState({ preference: "light", theme: "light" });
 
-  it("starts with threshold >= 2 and empty pins", () => {
+  it("starts with the default threshold, 60-day range, and empty pins", () => {
     expect(initial.threshold).toBe(DEFAULT_THRESHOLD);
+    expect(initial.range.preset).toBe("60d");
     expect(initial.pinnedLanguages.size).toBe(0);
     expect(initial.theme).toBe("light");
     expect(initial.themePreference).toBe("light");

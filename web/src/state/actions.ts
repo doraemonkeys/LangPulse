@@ -1,4 +1,4 @@
-import type { RangePreset } from "../utils/dates";
+import { DEFAULT_RANGE_PRESET, type RangePreset } from "../utils/dates";
 
 // `ThemeMode` is the *resolved* effective theme used for rendering (chart axes,
 // CSS variables). `ThemePreference` is what the user picked — "system" defers
@@ -120,7 +120,7 @@ export interface InitialThemeState {
 export function createInitialState(initialTheme: InitialThemeState): DashboardState {
   return {
     threshold: DEFAULT_THRESHOLD,
-    range: { from: "", to: "", preset: "90d" },
+    range: { from: "", to: "", preset: DEFAULT_RANGE_PRESET },
     pinnedLanguages: new Set<string>(),
     observedDate: null,
     launchDate: null,

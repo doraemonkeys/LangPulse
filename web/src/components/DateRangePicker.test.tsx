@@ -5,10 +5,10 @@ import { DateRangePicker } from "./DateRangePicker";
 
 const launchDate = "2026-04-01";
 const latestObservedDate = "2026-04-20";
-const initialRange = { from: "2026-04-10", to: "2026-04-20", preset: "90d" as const };
+const initialRange = { from: "2026-04-10", to: "2026-04-20", preset: "60d" as const };
 
 describe("DateRangePicker", () => {
-  it("highlights the active preset", () => {
+  it("shows only the supported presets and highlights the active one", () => {
     render(
       <DateRangePicker
         range={initialRange}
@@ -18,7 +18,14 @@ describe("DateRangePicker", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: "90d" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "30d",
+      "60d",
+      "90d",
+      "180d",
+    ]);
+    expect(screen.getByRole("button", { name: "60d" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /max/i })).not.toBeInTheDocument();
   });
 
   it("emits a new range when a preset is clicked", async () => {

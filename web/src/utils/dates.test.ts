@@ -5,8 +5,10 @@ import {
   compareDates,
   computeDefaultRange,
   computePresetRange,
+  DEFAULT_RANGE_PRESET,
   formatShortDate,
   presetToDays,
+  TREND_RANGE_PRESETS,
 } from "./dates";
 
 describe("date utils", () => {
@@ -27,13 +29,21 @@ describe("date utils", () => {
     expect(result.to).toBe("2026-04-03");
   });
 
-  it("maps presets to day counts and builds range windows", () => {
+  it("defines the supported trend ranges with a 60-day default", () => {
+    expect(TREND_RANGE_PRESETS.map(({ preset }) => preset)).toEqual([
+      "30d",
+      "60d",
+      "90d",
+      "180d",
+    ]);
+    expect(DEFAULT_RANGE_PRESET).toBe("60d");
     expect(presetToDays("30d")).toBe(30);
+    expect(presetToDays("60d")).toBe(60);
     expect(presetToDays("90d")).toBe(90);
     expect(presetToDays("180d")).toBe(180);
 
-    const max = computePresetRange("max", "2026-04-01", "2026-04-20");
-    expect(max).toEqual({ from: "2026-04-01", to: "2026-04-20", preset: "max" });
+    const sixty = computePresetRange(DEFAULT_RANGE_PRESET, "2026-01-01", "2026-04-20");
+    expect(sixty).toEqual({ from: "2026-02-20", to: "2026-04-20", preset: "60d" });
 
     const thirty = computePresetRange("30d", "2026-04-01", "2026-04-20");
     expect(thirty.preset).toBe("30d");

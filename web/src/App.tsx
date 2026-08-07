@@ -16,6 +16,7 @@ import {
   addDaysUtc,
   compareDates,
   computePresetRange,
+  DEFAULT_RANGE_PRESET,
   SPARKLINE_RANGE_DAYS,
 } from "./utils/dates";
 
@@ -45,7 +46,7 @@ function useDashboardBootstrap(launchDate: string | undefined, latestObservedDat
     if (state.range.from !== "" && state.range.to !== "") return;
     dispatch({
       type: "set_range",
-      range: computePresetRange("90d", launchDate, latestObservedDate),
+      range: computePresetRange(DEFAULT_RANGE_PRESET, launchDate, latestObservedDate),
     });
   }, [launchDate, latestObservedDate, state.range.from, state.range.to, dispatch]);
 }

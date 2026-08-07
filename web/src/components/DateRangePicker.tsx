@@ -4,7 +4,8 @@ import {
   clampDate,
   compareDates,
   computePresetRange,
-  type RangePreset,
+  TREND_RANGE_PRESETS,
+  type TrendRangePreset,
 } from "../utils/dates";
 
 interface DateRangePickerProps {
@@ -15,13 +16,6 @@ interface DateRangePickerProps {
   onChange: (range: DashboardRange) => void;
 }
 
-const PRESETS: Array<{ preset: Exclude<RangePreset, "custom">; label: string }> = [
-  { preset: "30d", label: "30d" },
-  { preset: "90d", label: "90d" },
-  { preset: "180d", label: "180d" },
-  { preset: "max", label: "Max" },
-];
-
 export function DateRangePicker({
   range,
   launchDate,
@@ -29,7 +23,7 @@ export function DateRangePicker({
   anchorDate,
   onChange,
 }: DateRangePickerProps) {
-  function handlePreset(preset: Exclude<RangePreset, "custom">): void {
+  function handlePreset(preset: TrendRangePreset): void {
     // Anchor presets on the snapshot date so trends always end at what the
     // leaderboard is showing. latestObservedDate is only used as the upper
     // bound on the date inputs below.
@@ -54,15 +48,15 @@ export function DateRangePicker({
   return (
     <div className="date-range" role="group" aria-label="Date range">
       <div className="date-range__presets">
-        {PRESETS.map((item) => (
+        {TREND_RANGE_PRESETS.map(({ preset }) => (
           <button
-            key={item.preset}
+            key={preset}
             type="button"
-            className={clsx("chip", range.preset === item.preset && "chip--active")}
-            aria-pressed={range.preset === item.preset}
-            onClick={() => handlePreset(item.preset)}
+            className={clsx("chip", range.preset === preset && "chip--active")}
+            aria-pressed={range.preset === preset}
+            onClick={() => handlePreset(preset)}
           >
-            {item.label}
+            {preset}
           </button>
         ))}
       </div>

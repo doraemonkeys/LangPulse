@@ -1,6 +1,15 @@
-export type RangePreset = "30d" | "90d" | "180d" | "max" | "custom";
+export const TREND_RANGE_PRESETS = [
+  { preset: "30d", days: 30 },
+  { preset: "60d", days: 60 },
+  { preset: "90d", days: 90 },
+  { preset: "180d", days: 180 },
+] as const;
 
-export const DEFAULT_RANGE_DAYS = 90;
+export type TrendRangePreset = (typeof TREND_RANGE_PRESETS)[number]["preset"];
+export type RangePreset = TrendRangePreset | "custom";
+
+export const DEFAULT_RANGE_PRESET: TrendRangePreset = "60d";
+export const DEFAULT_RANGE_DAYS = presetToDays(DEFAULT_RANGE_PRESET);
 export const SPARKLINE_RANGE_DAYS = 60;
 
 export function addDaysUtc(date: string, delta: number): string {
@@ -38,10 +47,6 @@ export function computePresetRange(
   launchDate: string,
   latestObservedDate: string,
 ): { from: string; to: string; preset: RangePreset } {
-  if (preset === "max") {
-    return { from: launchDate, to: latestObservedDate, preset };
-  }
-
   if (preset === "custom") {
     return { ...computeDefaultRange(launchDate, latestObservedDate), preset };
   }
@@ -50,10 +55,12 @@ export function computePresetRange(
   return { ...computeDefaultRange(launchDate, latestObservedDate, days), preset };
 }
 
-export function presetToDays(preset: Exclude<RangePreset, "max" | "custom">): number {
-  if (preset === "30d") return 30;
-  if (preset === "90d") return 90;
-  return 180;
+export function presetToDays(preset: TrendRangePreset): number {
+  const configuration = TREND_RANGE_PRESETS.find((candidate) => candidate.preset === preset);
+  if (configuration === undefined) {
+    throw new Error(`Unsupported trend range preset: ${preset}`);
+  }
+  return configuration.days;
 }
 
 export function formatShortDate(date: string): string {
