@@ -25,7 +25,7 @@ const LANGUAGE_COLORS: Record<string, LanguageColorEntry> = {
   javascript: { base: "#F1E05A", light: "#C9A227" },
   typescript: { base: "#3178C6" },
   java: { base: "#B07219" },
-  csharp: { base: "#178600" },
+  csharp: { base: "#7355dd" },
   cpp: { base: "#F34B7D" },
   c: { base: "#555555" },
   php: { base: "#4F5D95" },
