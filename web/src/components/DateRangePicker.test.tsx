@@ -5,7 +5,7 @@ import { DateRangePicker } from "./DateRangePicker";
 
 const launchDate = "2026-04-01";
 const latestObservedDate = "2026-04-20";
-const initialRange = { from: "2026-04-10", to: "2026-04-20", preset: "60d" as const };
+const initialRange = { from: "2026-04-10", to: "2026-04-20", preset: "90d" as const };
 
 describe("DateRangePicker", () => {
   it("shows only the supported presets and highlights the active one", () => {
@@ -19,12 +19,12 @@ describe("DateRangePicker", () => {
       />,
     );
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "30d",
       "60d",
       "90d",
       "180d",
+      "360d",
     ]);
-    expect(screen.getByRole("button", { name: "60d" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "90d" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: /max/i })).not.toBeInTheDocument();
   });
 
@@ -40,8 +40,8 @@ describe("DateRangePicker", () => {
         onChange={onChange}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "30d" }));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ preset: "30d" }));
+    await user.click(screen.getByRole("button", { name: "180d" }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ preset: "180d" }));
   });
 
   it("anchors preset ranges on anchorDate, not on latestObservedDate", async () => {
@@ -56,9 +56,9 @@ describe("DateRangePicker", () => {
         onChange={onChange}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "30d" }));
+    await user.click(screen.getByRole("button", { name: "180d" }));
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "2026-04-15", preset: "30d" }),
+      expect.objectContaining({ to: "2026-04-15", preset: "180d" }),
     );
   });
 

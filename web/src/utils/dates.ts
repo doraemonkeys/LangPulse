@@ -1,14 +1,14 @@
 export const TREND_RANGE_PRESETS = [
-  { preset: "30d", days: 30 },
   { preset: "60d", days: 60 },
   { preset: "90d", days: 90 },
   { preset: "180d", days: 180 },
+  { preset: "360d", days: 360 },
 ] as const;
 
 export type TrendRangePreset = (typeof TREND_RANGE_PRESETS)[number]["preset"];
 export type RangePreset = TrendRangePreset | "custom";
 
-export const DEFAULT_RANGE_PRESET: TrendRangePreset = "60d";
+export const DEFAULT_RANGE_PRESET: TrendRangePreset = "90d";
 export const DEFAULT_RANGE_DAYS = presetToDays(DEFAULT_RANGE_PRESET);
 export const SPARKLINE_RANGE_DAYS = 60;
 

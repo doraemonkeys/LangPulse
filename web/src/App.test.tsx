@@ -102,10 +102,10 @@ function renderApp(opts: RenderAppOptions = {}) {
 }
 
 describe("App", () => {
-  it("defaults the trend chart to 60d without offering a Max range", async () => {
+  it("defaults the trend chart to 90d without offering a Max range", async () => {
     renderApp();
 
-    const defaultRange = await screen.findByRole("button", { name: "60d" });
+    const defaultRange = await screen.findByRole("button", { name: "90d" });
     expect(defaultRange).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: /max/i })).not.toBeInTheDocument();
   });

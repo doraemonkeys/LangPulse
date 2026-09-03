@@ -29,25 +29,25 @@ describe("date utils", () => {
     expect(result.to).toBe("2026-04-03");
   });
 
-  it("defines the supported trend ranges with a 60-day default", () => {
+  it("defines the supported trend ranges with a 90-day default", () => {
     expect(TREND_RANGE_PRESETS.map(({ preset }) => preset)).toEqual([
-      "30d",
       "60d",
       "90d",
       "180d",
+      "360d",
     ]);
-    expect(DEFAULT_RANGE_PRESET).toBe("60d");
-    expect(presetToDays("30d")).toBe(30);
+    expect(DEFAULT_RANGE_PRESET).toBe("90d");
     expect(presetToDays("60d")).toBe(60);
     expect(presetToDays("90d")).toBe(90);
     expect(presetToDays("180d")).toBe(180);
+    expect(presetToDays("360d")).toBe(360);
 
-    const sixty = computePresetRange(DEFAULT_RANGE_PRESET, "2026-01-01", "2026-04-20");
-    expect(sixty).toEqual({ from: "2026-02-20", to: "2026-04-20", preset: "60d" });
+    const ninety = computePresetRange(DEFAULT_RANGE_PRESET, "2026-01-01", "2026-04-20");
+    expect(ninety).toEqual({ from: "2026-01-21", to: "2026-04-20", preset: "90d" });
 
-    const thirty = computePresetRange("30d", "2026-04-01", "2026-04-20");
-    expect(thirty.preset).toBe("30d");
-    expect(thirty.to).toBe("2026-04-20");
+    const sixty = computePresetRange("60d", "2026-04-01", "2026-04-20");
+    expect(sixty.preset).toBe("60d");
+    expect(sixty.to).toBe("2026-04-20");
 
     const custom = computePresetRange("custom", "2026-04-01", "2026-04-20");
     expect(custom.preset).toBe("custom");
